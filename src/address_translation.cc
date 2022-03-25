@@ -1,5 +1,9 @@
 #include "address_translation.h"
 
+/*
+    @input: takes in the client provided address
+    @output: returns validity of client provided address
+*/
 bool AddressTranslation::IsValidAddress(int address)
 {
     if (address < 0 || address >= BLOCK_STORAGE_MAX_SIZE) 

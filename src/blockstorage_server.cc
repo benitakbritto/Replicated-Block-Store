@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include "address_translation.h"
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -48,12 +49,6 @@ using namespace std;
 
 #define BLOCK_SIZE 4096
 
-struct PathData {
-    std::string path;
-    int offset;
-    int size;
-};
-
 using namespace std;
 
 // Log Levels - can be simplified, but isolation gives granular control
@@ -63,21 +58,23 @@ using namespace std;
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
-std::string SERVER_STORAGE_PATH = "/home/benitakbritto/hemal/CS-739-P3/storage";
+std::string SERVER_STORAGE_PATH = "/home/benitakbritto/reetu/CS-739-P3/storage";
+
+AddressTranslation atl;
 
 // Logic and data behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
   
-  std::vector<PathData> testATLSim(){
-    // cout<<"reached atl \n";
-    PathData testpd;
-    testpd.path="/home/benitakbritto/CS-739-P3/src/abc.txt";
-    testpd.size=30;
-    testpd.offset=0;
-    std::vector<PathData> pdVec;
-    pdVec.push_back(testpd);
-    return pdVec;
-  }
+  // std::vector<PathData> testATLSim(){
+  //   // cout<<"reached atl \n";
+  //   PathData testpd;
+  //   testpd.path="/home/benitakbritto/CS-739-P3/src/abc.txt";
+  //   testpd.size=30;
+  //   testpd.offset=0;
+  //   std::vector<PathData> pdVec;
+  //   pdVec.push_back(testpd);
+  //   return pdVec;
+  // }
 
   Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
@@ -86,7 +83,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     std::string readContent;
 
     // TODO: Call ATL to fetch actual address
-    std::vector<PathData> pathData = testATLSim();
+    std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
       int fd = open(pd.path.c_str(), O_RDONLY);
@@ -119,7 +116,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     string data = request->buffer();
     int start = 0;
     // TODO: Call ATL to fetch actual address
-    std::vector<PathData> pathData = testATLSim();
+    std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
       int fd = open(pd.path.c_str(), O_WRONLY);
@@ -251,7 +248,7 @@ void RunServer() {
 
 int main(int argc, char** argv) {
   PrepareStorage();
-
+  
   RunServer();
 
   return 0;

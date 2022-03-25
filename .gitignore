@@ -36,4 +36,4 @@ src/cmake/*
 
 #editor
 .vscode
-./storage
+storage

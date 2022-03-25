@@ -18,7 +18,9 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
 #include <errno.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
@@ -48,6 +50,17 @@ struct PathData {
     int offset;
     int size;
 };
+
+using namespace std;
+
+// Log Levels - can be simplified, but isolation gives granular control
+#define DEBUG
+#define WARN
+
+#define LEVEL_O_COUNT 1024
+#define LEVEL_1_COUNT 256
+
+std::string SERVER_STORAGE_PATH = "/home/benitakbritto/hemal/CS-739-P3/storage";
 
 // Logic and data behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
@@ -101,6 +114,47 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 };
 
+void PrepareStorage() {
+  
+  #ifdef DEBUG
+    cout << "[INFO] Preparing Storage Path" << endl;
+  #endif
+
+  int res = mkdir(SERVER_STORAGE_PATH.c_str(), 0777);
+
+  if (res == -1 && errno == EEXIST) {
+    #ifdef WARN
+      cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
+    #endif
+  }
+
+  for(int dirId = 0; dirId < LEVEL_O_COUNT; dirId++) {
+
+    // check if the directory is already is created
+    string dir = SERVER_STORAGE_PATH + "/" + to_string(dirId);
+
+    res = mkdir(dir.c_str(), 0777);
+
+    if (res == -1 && errno == EEXIST) {
+      #ifdef WARN
+        cout << "[WARN] Dir:" << dir << " already exists." << endl;
+      #endif
+    }
+
+    for(int fileId = 0; fileId < LEVEL_1_COUNT; fileId++) {
+      string file = dir + "/" + std::to_string(fileId);
+
+      res = open(file.c_str(), O_CREAT | O_EXCL, 0777);
+
+      if (res == -1 && errno == EEXIST) {
+        #ifdef WARN
+          cout << "[WARN] File:" << file << " already exists." << endl;
+        #endif
+      }
+    }
+  }
+}
+
 void RunServer() {
   std::string server_address("0.0.0.0:50051");
   BlockStorageServiceImpl service;
@@ -123,6 +177,8 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
+  PrepareStorage();
+
   RunServer();
 
 

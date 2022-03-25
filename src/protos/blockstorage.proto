@@ -31,13 +31,13 @@ message ReadRequest {
 }
 
 message ReadReply {
-  bytes buffer = 1;
+  string buffer = 1;
   uint32 error = 2;
 }
 
 message WriteRequest {
   uint32 addr = 1;
-  bytes buffer = 2;
+  string buffer = 2;
 }
 
 message WriteReply {

@@ -8,13 +8,72 @@
 
 using namespace std;
 
-int main() {
-    // COMMANDS
-    string TXN_START = "TXN_START";
-    string TXN_END = "TXN_END";
-    string MV = "MV";
+// COMMANDS
+string TXN_START = "TXN_START";
+string TXN_END = "TXN_END";
+string MV = "MV";
 
-    string delim = ":";
+string delim = ":";
+
+class WALBuilder;
+
+class WAL {
+    public:
+        friend class WALBuilder;
+        static WALBuilder make();
+
+    private:
+        WAL() = default;
+        string log;
+    
+};
+
+// #define PRINT
+class WALBuilder {
+    private:
+        WAL wal;
+
+    public:
+        WALBuilder& txn_init() {
+            wal.log += "TXN_START\n";
+            return *this;
+        }
+
+        WALBuilder& move(string from_path, string to_path) {
+            wal.log += "MV:" + from_path + ":" + to_path + "\n";
+            return *this;
+        }
+
+        WALBuilder& txn_end() {
+            wal.log += "TXN_END\n";
+            return *this;
+        }
+
+        string to_string() {
+            return wal.log;
+        }
+};
+
+WALBuilder WAL::make()
+{
+    return WALBuilder();
+}
+
+void sampleLogUsage() {
+    WALBuilder builder = WAL::make();
+
+    builder.txn_init();
+    builder.move("from1.txt", "end1.txt");
+    builder.move("from2.txt", "end2.txt");
+    builder.txn_end();
+
+    string log = builder.to_string();
+    cout << log << endl;
+}
+
+int main() {
+
+    sampleLogUsage();
 
     string FILENAME = "/home/benitakbritto/hemal/CS-739-P3/src/WAL/self.log";
     ifstream file(FILENAME);

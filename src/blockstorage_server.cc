@@ -37,9 +37,19 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using blockstorage::Greeter;
-using blockstorage::HelloReply;
-using blockstorage::HelloRequest;
+using blockstorage::BlockStorage;
+using blockstorage::ReadReply;
+using blockstorage::ReadRequest;
+
+using namespace std;
+
+#define BLOCK_SIZE 4096
+
+struct PathData {
+    std::string path;
+    int offset;
+    int size;
+};
 
 using namespace std;
 
@@ -53,11 +63,53 @@ using namespace std;
 std::string SERVER_STORAGE_PATH = "/home/benitakbritto/hemal/CS-739-P3/storage";
 
 // Logic and data behind the server's behavior.
-class GreeterServiceImpl final : public Greeter::Service {
-  Status SayHello(ServerContext* context, const HelloRequest* request,
-                  HelloReply* reply) override {
-    std::string prefix("Hello ");
-    reply->set_message(prefix + request->name());
+class BlockStorageServiceImpl final : public BlockStorage::Service {
+  
+  std::vector<PathData> testATLSim(){
+    cout<<"reached atl \n";
+    PathData testpd;
+    testpd.path="/home/benitakbritto/CS-739-P3/src/abc.txt";
+    testpd.size=10;
+    testpd.offset=10;
+    std::vector<PathData> pdVec;
+    pdVec.push_back(testpd);
+    cout<<"testpd path: "<<testpd.path<<endl;
+    cout<<" pdvec: "<<pdVec[0].path<<endl;
+    return pdVec;
+  }
+
+  Status Read(ServerContext* context, const ReadRequest* request,
+                  ReadReply* reply) override {
+    
+    int address = request->addr();
+    cout<<"address recvd: "<<address<<endl;
+    std::string readContent;
+
+    // TODO: Call ATL to fetch actual address
+    std::vector<PathData> pathData = testATLSim();
+    cout<<" pathData: "<<pathData[0].path<<endl;
+    for(PathData pd : pathData) {
+      cout<<"pd path:"<<pd.path<<endl;
+      int fd = open(pd.path.c_str(), O_RDONLY);
+      if (fd == -1){
+        reply->set_error(errno);
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
+      }
+
+      char *buf = new char[pd.size];
+      int bytesRead = pread(fd, buf, pd.size, pd.offset);
+      if (bytesRead == -1){
+        cout << "pread failed" << endl;
+        reply->set_error(errno);
+        perror(strerror(errno));
+        close(fd);
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to read bytes\n");
+      }
+      readContent += buf;
+      close(fd);
+    }
+    
+    reply->set_buffer(readContent);
     return Status::OK;
   }
 };
@@ -105,7 +157,7 @@ void PrepareStorage() {
 
 void RunServer() {
   std::string server_address("0.0.0.0:50051");
-  GreeterServiceImpl service;
+  BlockStorageServiceImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -128,6 +180,7 @@ int main(int argc, char** argv) {
   PrepareStorage();
 
   RunServer();
+
 
   return 0;
 }

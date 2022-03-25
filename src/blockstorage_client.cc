@@ -31,35 +31,24 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
-using blockstorage::Greeter;
-using blockstorage::HelloReply;
-using blockstorage::HelloRequest;
+using blockstorage::BlockStorage;
+using blockstorage::ReadReply;
+using blockstorage::ReadRequest;
 
-class GreeterClient {
+class BlockStorageClient {
  public:
-  GreeterClient(std::shared_ptr<Channel> channel)
-      : stub_(Greeter::NewStub(channel)) {}
+  BlockStorageClient(std::shared_ptr<Channel> channel)
+      : stub_(BlockStorage::NewStub(channel)) {}
 
-  // Assembles the client's payload, sends it and presents the response back
-  // from the server.
-  std::string SayHello(const std::string& user) {
-    // Data we are sending to the server.
-    HelloRequest request;
-    request.set_name(user);
-
-    // Container for the data we expect from the server.
-    HelloReply reply;
-
-    // Context for the client. It could be used to convey extra information to
-    // the server and/or tweak certain RPC behaviors.
+  std::string Read(int address) {
+    ReadRequest request;
+    request.set_addr(address);
+    ReadReply reply;
     ClientContext context;
+    Status status = stub_->Read(&context, request, &reply);
 
-    // The actual RPC.
-    Status status = stub_->SayHello(&context, request, &reply);
-
-    // Act upon its status.
     if (status.ok()) {
-      return reply.message();
+      return reply.buffer().c_str();
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
                 << std::endl;
@@ -68,7 +57,7 @@ class GreeterClient {
   }
 
  private:
-  std::unique_ptr<Greeter::Stub> stub_;
+  std::unique_ptr<BlockStorage::Stub> stub_;
 };
 
 int main(int argc, char** argv) {
@@ -98,11 +87,11 @@ int main(int argc, char** argv) {
   } else {
     target_str = "localhost:50051";
   }
-  GreeterClient greeter(
+  BlockStorageClient blockStorage(
       grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-  std::string user("world");
-  std::string reply = greeter.SayHello(user);
-  std::cout << "Greeter received: " << reply << std::endl;
+  int address = 4000; //TODO: remove
+  std::string reply = blockStorage.Read(address);
+  std::cout << "BlockStorage received: " << reply << std::endl;
 
   return 0;
 }

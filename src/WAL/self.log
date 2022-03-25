@@ -1,0 +1,7 @@
+TXN_START
+MV:/home/benitakbritto/hemal/CS-739-P3/storage/0/0.temp:/home/benitakbritto/hemal/CS-739-P3/storage/0/0
+MV:/home/benitakbritto/hemal/CS-739-P3/storage/0/1.temp:/home/benitakbritto/hemal/CS-739-P3/storage/0/1
+TXN_START
+MV:/home/benitakbritto/hemal/CS-739-P3/storage/0/2.temp:/home/benitakbritto/hemal/CS-739-P3/storage/0/0
+MV:/home/benitakbritto/hemal/CS-739-P3/storage/0/3.temp:/home/benitakbritto/hemal/CS-739-P3/storage/0/1
+TXN_END

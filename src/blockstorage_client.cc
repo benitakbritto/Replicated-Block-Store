@@ -34,6 +34,8 @@ using grpc::Status;
 using blockstorage::BlockStorage;
 using blockstorage::ReadReply;
 using blockstorage::ReadRequest;
+using blockstorage::WriteReply;
+using blockstorage::WriteRequest;
 
 class BlockStorageClient {
  public:
@@ -49,6 +51,23 @@ class BlockStorageClient {
 
     if (status.ok()) {
       return reply.buffer().c_str();
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+      return "RPC failed";
+    }
+  }
+
+  std::string Write(int address, std::string buf){
+    WriteRequest request;
+    request.set_addr(address);
+    request.set_buffer(buf);
+    WriteReply reply;
+    ClientContext context;
+    Status status = stub_->Write(&context, request, &reply);
+
+    if (status.ok()) {
+      return "Write successful";
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
                 << std::endl;
@@ -90,7 +109,9 @@ int main(int argc, char** argv) {
   BlockStorageClient blockStorage(
       grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   int address = 4000; //TODO: remove
-  std::string reply = blockStorage.Read(address);
+  // std::string reply = blockStorage.Read(address);
+
+  std::string reply = blockStorage.Write(address, "hello world");
   std::cout << "BlockStorage received: " << reply << std::endl;
 
   return 0;

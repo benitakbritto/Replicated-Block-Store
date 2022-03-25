@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -40,6 +41,8 @@ using grpc::Status;
 using blockstorage::BlockStorage;
 using blockstorage::ReadReply;
 using blockstorage::ReadRequest;
+using blockstorage::WriteReply;
+using blockstorage::WriteRequest;
 
 using namespace std;
 
@@ -54,7 +57,7 @@ struct PathData {
 using namespace std;
 
 // Log Levels - can be simplified, but isolation gives granular control
-#define DEBUG
+#define INFO
 #define WARN
 
 #define LEVEL_O_COUNT 1024
@@ -66,15 +69,13 @@ std::string SERVER_STORAGE_PATH = "/home/benitakbritto/hemal/CS-739-P3/storage";
 class BlockStorageServiceImpl final : public BlockStorage::Service {
   
   std::vector<PathData> testATLSim(){
-    cout<<"reached atl \n";
+    // cout<<"reached atl \n";
     PathData testpd;
     testpd.path="/home/benitakbritto/CS-739-P3/src/abc.txt";
-    testpd.size=10;
-    testpd.offset=10;
+    testpd.size=30;
+    testpd.offset=0;
     std::vector<PathData> pdVec;
     pdVec.push_back(testpd);
-    cout<<"testpd path: "<<testpd.path<<endl;
-    cout<<" pdvec: "<<pdVec[0].path<<endl;
     return pdVec;
   }
 
@@ -82,14 +83,12 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
                   ReadReply* reply) override {
     
     int address = request->addr();
-    cout<<"address recvd: "<<address<<endl;
     std::string readContent;
 
     // TODO: Call ATL to fetch actual address
     std::vector<PathData> pathData = testATLSim();
-    cout<<" pathData: "<<pathData[0].path<<endl;
+
     for(PathData pd : pathData) {
-      cout<<"pd path:"<<pd.path<<endl;
       int fd = open(pd.path.c_str(), O_RDONLY);
       if (fd == -1){
         reply->set_error(errno);
@@ -112,11 +111,85 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     reply->set_buffer(readContent);
     return Status::OK;
   }
+
+  Status Write(ServerContext* context, const WriteRequest* request,
+                  WriteReply* reply) override {
+    
+    int address = request->addr();
+    string data = request->buffer();
+    int start = 0;
+    // TODO: Call ATL to fetch actual address
+    std::vector<PathData> pathData = testATLSim();
+
+    for(PathData pd : pathData) {
+      int fd = open(pd.path.c_str(), O_WRONLY);
+      if (fd == -1){
+        reply->set_error(errno);
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
+      }
+      std::string temp_path = generateTempPath(pd.path.c_str());
+      int bytesWritten = WriteToTempFile(temp_path, data.c_str()+start, pd.size, pd.offset);
+      
+      if (bytesWritten == -1){
+        
+        #ifdef INFO
+          cout << "pwrite failed" << endl;
+        #endif
+
+        reply->set_error(errno);
+        perror(strerror(errno));
+        close(fd);
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n");
+      }
+      start+=pd.size;
+      close(fd);
+      // TODO: save to cache
+      rename(temp_path.c_str(), pd.path.c_str());
+    }
+    
+    return Status::OK;
+  }
+
+  int WriteToTempFile(const std::string temp_path, std::string buffer, unsigned int size, int offset){
+    #ifdef IS_DEBUG_ON
+	  	  cout << "START:" << __func__ << endl;
+        cout<<"server to write data size "<< size <<" to file:"<<temp_path<<endl;
+	  #endif
+    
+    int fd = open(temp_path.c_str(), O_CREAT|O_EXCL, 0777);
+    close(fd);
+    fd = open(temp_path.c_str(), O_RDWR, 0644);
+    if(fd == -1){
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    cout<<"buffer: "<<buffer<<endl;
+
+    int res = pwrite(fd, buffer.c_str(), size, offset);
+    if(res == -1){
+      cout<<"ERR: pwrite local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    fsync(fd);
+    close(fd);
+
+    #ifdef IS_DEBUG_ON
+	  	  cout << "END:" << __func__ << endl;
+	  #endif
+
+    return 0;    // TODO: check the error code
+  }
+
+  std::string generateTempPath(std::string path){
+    return path + ".tmp" + to_string(rand() % 101743);
+  }
 };
 
 void PrepareStorage() {
   
-  #ifdef DEBUG
+  #ifdef INFO
     cout << "[INFO] Preparing Storage Path" << endl;
   #endif
 
@@ -180,7 +253,6 @@ int main(int argc, char** argv) {
   PrepareStorage();
 
   RunServer();
-
 
   return 0;
 }

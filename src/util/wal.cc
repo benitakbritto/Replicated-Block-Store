@@ -8,6 +8,7 @@ WAL::WAL(string base_path) {
         throw runtime_error("[ERROR]: Could not create log file");
     }
 
+    cout << "[INFO]: Init logging at:" << log_file_path << endl;
     sem_init(&lock, 0, 1);
 }
 

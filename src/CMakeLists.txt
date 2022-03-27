@@ -70,9 +70,11 @@ endforeach()
 foreach(_target
   blockstorage_server )
   add_library(atl "util/address_translation.cc")
+  add_library(wal "util/wal.cc")
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     atl
+    wal
     hw_grpc_proto
     ${_REFLECTION}
     ${_GRPC_GRPCPP}

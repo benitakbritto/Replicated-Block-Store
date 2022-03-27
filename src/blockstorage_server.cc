@@ -53,12 +53,12 @@ using namespace std;
 
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
-#define WARN
+// #define WARN
 
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
-std::string SERVER_STORAGE_PATH = "/home/benitakbritto/reetu/CS-739-P3/storage";
+string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 
@@ -82,11 +82,11 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     int address = request->addr();
     std::string readContent;
 
-    // TODO: Call ATL to fetch actual address
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
-      int fd = open(pd.path.c_str(), O_RDONLY);
+      cout<<SERVER_STORAGE_PATH + pd.path<<endl;
+      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_RDONLY);
       if (fd == -1){
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
@@ -119,7 +119,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
-      int fd = open(pd.path.c_str(), O_WRONLY);
+      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
       if (fd == -1){
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
@@ -179,7 +179,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return 0;    // TODO: check the error code
   }
 
-  std::string generateTempPath(std::string path){
+  string generateTempPath(std::string path){
     return path + ".tmp" + to_string(rand() % 101743);
   }
 };
@@ -225,8 +225,9 @@ void PrepareStorage() {
   }
 }
 
-void RunServer() {
-  std::string server_address("0.0.0.0:50051");
+void RunServer(int port) {
+
+  std::string server_address("0.0.0.0:" + std::to_string(port));
   BlockStorageServiceImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
@@ -248,8 +249,5 @@ void RunServer() {
 
 int main(int argc, char** argv) {
   PrepareStorage();
-  
-  RunServer();
-
-  return 0;
+  RunServer(50051);
 }

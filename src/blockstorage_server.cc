@@ -23,7 +23,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "address_translation.h"
+#include "util/address_translation.h"
+#include "util/wal.h"
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -61,6 +62,7 @@ using namespace std;
 string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
+WAL *wal;
 
 // Logic and data behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
@@ -249,5 +251,9 @@ void RunServer(int port) {
 
 int main(int argc, char** argv) {
   PrepareStorage();
+  // Write Ahead Logger
+  wal = new WAL(SERVER_STORAGE_PATH);
   RunServer(50051);
+
+  return 0;
 }

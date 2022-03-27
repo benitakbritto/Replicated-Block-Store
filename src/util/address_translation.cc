@@ -14,7 +14,7 @@ bool AddressTranslation::IsValidAddress(int address)
 }
 
 /*
-    @input: takes in the client provided address
+    @input: takes in an aligned address
     @output: returns the directory number
 */
 string AddressTranslation::GetDirectory(int address)
@@ -23,7 +23,7 @@ string AddressTranslation::GetDirectory(int address)
 }
 
 /*
-    @input: takes in the client provided address
+    @input: takes in an aligned address
     @output: returns the file number
 */
 string AddressTranslation::GetFile(int address)

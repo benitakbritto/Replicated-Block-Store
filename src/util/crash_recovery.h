@@ -55,8 +55,6 @@ typedef LogData Data;
 #define DELIM                       ":"    
 #define OPERATION_MOVE              "MV"       
 
-
-
 class CrashRecovery
 {
 public:

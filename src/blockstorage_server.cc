@@ -23,7 +23,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "address_translation.h"
+#include "util/address_translation.h"
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -58,7 +58,7 @@ using namespace std;
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
-std::string SERVER_STORAGE_PATH = "/home/benitakbritto/reetu/CS-739-P3/storage";
+std::string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 

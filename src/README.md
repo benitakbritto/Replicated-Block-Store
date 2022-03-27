@@ -8,6 +8,7 @@ for example, instead of `make -j` use `make -j 4`
 
 ### Build
 #### Config Setup:
+0. export MY_INSTALL_DIR=$HOME/.local
 1. mkdir -p cmake/build
 2. pushd cmake/build
 3. cmake -DCMAKE_PREFIX_PATH=$MY_INSTALL_DIR ../..

@@ -73,11 +73,30 @@ target_link_libraries(comm_grpc_proto
 # TODO Add comm proto to _target only
 
 # Targets blockstorage_[async_](client|server)
+# foreach(_target
+#   load_balancer)
+#   add_library(lb "load_balancer.cc")
+#   add_executable(${_target} "${_target}.cc")
+#   target_link_libraries(${_target}
+#     lb
+#     hw_grpc_proto
+#     ${_REFLECTION}
+#     ${_GRPC_GRPCPP}
+#     ${_PROTOBUF_LIBPROTOBUF})
+# endforeach()
+
+add_library(client_lib "client.cc")
+
+target_link_libraries(client_lib 
+  hw_grpc_proto
+)
+
 foreach(_target
-  blockstorage_client)
+  blockstorage_client load_balancer)
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     hw_grpc_proto
+    client_lib
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

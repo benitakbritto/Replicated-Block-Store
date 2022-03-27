@@ -15,7 +15,7 @@
  * limitations under the License.
  *
  */
-
+#include "client.h"
 #include <iostream>
 #include <memory>
 #include <string>
@@ -37,47 +37,14 @@ using blockstorage::ReadRequest;
 using blockstorage::WriteReply;
 using blockstorage::WriteRequest;
 
-class BlockStorageClient {
- public:
-  BlockStorageClient(std::shared_ptr<Channel> channel)
-      : stub_(BlockStorage::NewStub(channel)) {}
+// class BlockStorageClient {
+//  public:
+//   BlockStorageClient(std::shared_ptr<Channel> channel)
+//       : stub_(BlockStorage::NewStub(channel)) {}
 
-  std::string Read(int address) {
-    ReadRequest request;
-    request.set_addr(address);
-    ReadReply reply;
-    ClientContext context;
-    Status status = stub_->Read(&context, request, &reply);
-
-    if (status.ok()) {
-      return reply.buffer().c_str();
-    } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
-    }
-  }
-
-  std::string Write(int address, std::string buf){
-    WriteRequest request;
-    request.set_addr(address);
-    request.set_buffer(buf);
-    WriteReply reply;
-    ClientContext context;
-    Status status = stub_->Write(&context, request, &reply);
-
-    if (status.ok()) {
-      return "Write successful";
-    } else {
-      std::cout << status.error_code() << ": " << status.error_message()
-                << std::endl;
-      return "RPC failed";
-    }
-  }
-
- private:
-  std::unique_ptr<BlockStorage::Stub> stub_;
-};
+//  private:
+//   std::unique_ptr<BlockStorage::Stub> stub_;
+// };
 
 int main(int argc, char** argv) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
@@ -104,14 +71,16 @@ int main(int argc, char** argv) {
       return 0;
     }
   } else {
-    target_str = "localhost:50051";
+    target_str = "localhost:50053"; // LoadBalancer
   }
-  BlockStorageClient blockStorage(
-      grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-  int address = 4000; //TODO: remove
-  // std::string reply = blockStorage.Read(address);
 
-  std::string reply = blockStorage.Write(address, "hello world");
+  BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+
+  // BlockStorageClient blockstorageClient(channel);
+  int address = 0; //TODO: remove
+  // std::string reply = blockStorageClient.Read(address);
+
+  std::string reply = blockstorageClient.Read(address);
   std::cout << "BlockStorage received: " << reply << std::endl;
 
   return 0;

@@ -60,9 +60,13 @@ class LoadBalancer final : public BlockStorage::Service {
 
             idx=1-idx; //2 servers
 
-            string resp = bs_clients[0]->Read(request->addr());
-            cout<<"Returned resp: "<<resp<<endl;
-            return Status::OK;
+            string read_buf = bs_clients[0]->Read(request->addr());
+            if(reply->error()==0){
+                reply->set_buffer(read_buf);
+                return Status::OK;
+            } else { 
+                return grpc::Status(grpc::StatusCode::INTERNAL, "error in read");
+            }
         }
 
         // string Write(ServerContext* context, const ReadRequest* request,
@@ -73,7 +77,6 @@ class LoadBalancer final : public BlockStorage::Service {
         //     return Write(&context, request, &reply, stubs[idx]);
         // }
 
-      
 };
 
 void RunServer(int port) {

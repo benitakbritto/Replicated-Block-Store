@@ -25,26 +25,23 @@
 #include <unistd.h>
 #include "util/address_translation.h"
 #include "util/wal.h"
+#include <pthread.h>
+#include <signal.h>
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 
-#ifdef BAZEL_BUILD
-#include "examples/protos/blockstorage.grpc.pb.h"
-#else
+
 #include "blockstorage.grpc.pb.h"
-#endif
+#include "servercomm.grpc.pb.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using blockstorage::BlockStorage;
-using blockstorage::ReadReply;
-using blockstorage::ReadRequest;
-using blockstorage::WriteReply;
-using blockstorage::WriteRequest;
+
+using namespace blockstorage;
 
 using namespace std;
 
@@ -63,6 +60,23 @@ string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 WAL *wal;
+
+class ServiceCommImpl final: public ServiceComm::Service {
+  Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
+    reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status Commit(ServerContext* context, const CommitRequest* request, CommitReply* reply) override {
+    reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
+    reply->set_status(0);
+    return Status::OK;
+  }  
+};
 
 // Logic and data behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
@@ -227,7 +241,8 @@ void PrepareStorage() {
   }
 }
 
-void RunServer(int port) {
+void *RunBlockStorageServer(void* _port) {
+  int port = *((int*)_port);
 
   std::string server_address("0.0.0.0:" + std::to_string(port));
   BlockStorageServiceImpl service;
@@ -242,18 +257,54 @@ void RunServer(int port) {
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
+
+  return NULL;
+}
+
+void *RunCommServer(void* _port) {
+  int port = *((int*)_port);
+
+  std::string server_address("0.0.0.0:" + std::to_string(port));
+  ServiceCommImpl service;
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "CommServer listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  server->Wait();
+
+  return NULL;
 }
 
 int main(int argc, char** argv) {
   PrepareStorage();
   // Write Ahead Logger
   wal = new WAL(SERVER_STORAGE_PATH);
-  RunServer(50051);
+
+  cout << getpid() << endl;
+
+  pthread_t block_server_t, comm_server_t;
+  int port1 = 50051, port2 = 50052;
+  pthread_create(&block_server_t, NULL, RunBlockStorageServer, (void *)&port1);
+  pthread_create(&comm_server_t, NULL, RunCommServer, (void *)&port2);
+
+  pthread_join(block_server_t, NULL);
+  pthread_join(comm_server_t, NULL);
 
   return 0;
 }

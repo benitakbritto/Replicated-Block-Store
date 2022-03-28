@@ -111,6 +111,7 @@ foreach(_target
     atl
     wal
     hw_grpc_proto
+    comm_grpc_proto
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

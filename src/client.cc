@@ -1,3 +1,4 @@
+#include<errno.h>
 #include "client.h"
 
 string BlockStorageClient::Read(int address) {
@@ -11,7 +12,8 @@ string BlockStorageClient::Read(int address) {
         return reply.buffer().c_str();
     } else {
         cout << status.error_code() << ": " << status.error_message()<< endl;
-        return "RPC failed";
+        reply.set_error(errno);
+        return "Error";
     }
 }
 

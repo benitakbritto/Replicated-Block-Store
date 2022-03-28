@@ -75,11 +75,7 @@ int main(int argc, char** argv) {
   }
 
   BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-
-  // BlockStorageClient blockstorageClient(channel);
   int address = 0; //TODO: remove
-  // std::string reply = blockStorageClient.Read(address);
-
   std::string reply = blockstorageClient.Read(address);
   std::cout << "BlockStorage received: " << reply << std::endl;
 

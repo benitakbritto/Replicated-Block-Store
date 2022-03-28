@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package blockstorage;
+
+service ServiceComm
+{
+    rpc Prepare(PrepareRequest) returns (PrepareReply) {}
+    rpc Commit(CommitRequest) returns (CommitReply) {}
+    rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusReply) {}
+}
+
+message PrepareRequest
+{
+    string transationId = 1;
+    string buffer = 2;
+    repeated string file_name = 3;
+    repeated uint32 offset = 4;
+    repeated uint32 size = 5;
+}
+
+message PrepareReply
+{
+    uint32 status = 1;
+}
+
+message CommitRequest
+{
+    string transationId = 1;
+    repeated string file_name = 2;
+}
+
+message CommitReply
+{
+    uint32 status = 1;
+}
+
+message GetTransactionStatusRequest
+{
+    string transationId = 1;
+}
+
+message GetTransactionStatusReply
+{
+    uint32 status = 1;
+}

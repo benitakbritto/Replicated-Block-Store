@@ -7,6 +7,7 @@ service ServiceComm
     rpc Prepare(PrepareRequest) returns (PrepareReply) {}
     rpc Commit(CommitRequest) returns (CommitReply) {}
     rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusReply) {}
+    rpc Sync(SyncRequest) returns (stream SyncReply);
 }
 
 message PrepareRequest
@@ -43,3 +44,17 @@ message GetTransactionStatusReply
 {
     uint32 status = 1;
 }
+
+message SyncRequest {
+    string ip = 1;
+}
+
+message SyncReply {
+    repeated Operation ops = 1;
+}
+
+message Operation {
+    string txnId = 1;
+    string filePath = 2;
+    string buffer = 3;
+} 

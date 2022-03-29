@@ -33,6 +33,7 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::ServerReaderWriter;
+using grpc::ClientReaderWriter;
 using grpc::ServerWriter;
 using namespace blockstorage;
 using namespace std::chrono;
@@ -96,27 +97,48 @@ class ServiceCommImpl final: public ServiceComm::Service {
   Status Sync(ServerContext* context, ServerReaderWriter<SyncReply, SyncRequest>* stream) override{
     SyncRequest request;
 
+    int count_down = 3;
+    int pending_writes = 3;
+
     while (stream->Read(&request)) {
+        SyncRequest_Commands command = request.command();
         #ifdef DEBUG
-          cout << "[INFO]: Recv sync request from [IP:]" << request.ip() << endl;
+          cout << "[INFO]: Recv sync request from [IP:]" << request.ip() << ",[CMD:]" << command << endl;
         #endif
 
-        SyncRequest_Commands command = request.command();
-
         if (SyncRequest_Commands_STOP_WRITE == command) {
+          cout << "[INFO]: acquiring the global write lock" << endl;
           sem_wait(&global_write_lock);
+
           SyncReply reply;
           reply.set_error(0);
           stream->Write(reply);
-        } else if (SyncRequest_Commands_WRITES_IN_FLIGHT == command) {
+        } else if (SyncRequest_Commands_WRITES_STATUS == command) {
           SyncReply reply;
-          reply.set_count(writes_in_flight);
+          reply.set_inflight_writes(count_down);
+          // TODO: set the KV size
+          reply.set_pending_writes(pending_writes);
           stream->Write(reply);
+          count_down--;
         } else if (SyncRequest_Commands_GET_WRITES == command) {
           // TODO: get all write txn from map one by one
+          SyncReply reply;
+          SyncRequest request;
+          for(int i = 0; i < pending_writes; i++) {
+            // Step - 1: Send Ops
+            reply.set_error(i);
+            stream->Write(reply);
+            cout << "[INFO]: sent txn num:" << reply.error() << endl;
+            
+            // Step - 2: Wait for the ack and then do some bookkeeping 
+            stream->Read(&request);
+            cout << "[INFO]: got ack" << endl;
 
-          // Step - 1: Send Ops
-          // Step - 2: Wait for the ack and then update the local KV store
+            // Step - 2.1: book keeping
+          }
+
+          goto RELEASE_GLOBAL_LOCK;
+          
         } else {
             cout << "[ERROR]: Unknown command" << endl;
             break;
@@ -124,6 +146,8 @@ class ServiceCommImpl final: public ServiceComm::Service {
         
     }
 
+    RELEASE_GLOBAL_LOCK: 
+    cout << "[INFO]: releasing the global write lock" << endl;
     sem_post(&global_write_lock);
 
     return Status::OK;
@@ -483,6 +507,112 @@ void *RunCommServer(void* _port) {
   return NULL;
 }
 
+class ServiceCommClient {
+
+  private:
+      unique_ptr<ServiceComm::Stub> stub_;
+      
+  public:
+      ServiceCommClient(std::shared_ptr<Channel> channel)
+        : stub_(ServiceComm::NewStub(channel)) {}
+      
+      void stop_writes(std::shared_ptr<ClientReaderWriter<SyncRequest, SyncReply> > stream) {
+          SyncRequest request;
+          SyncReply reply;
+
+          request.set_ip("0.0.0.0");
+          request.set_command(SyncRequest_Commands_STOP_WRITE);
+          
+          stream->Write(request);
+          cout << "[INFO]: sent SyncRequest_Commands_STOP_WRITE request to Primary" << endl;
+          
+          stream->Read(&reply);
+          cout << "[INFO]: recv from primary:" << reply.error() << endl;
+      }
+
+      int wait(std::shared_ptr<ClientReaderWriter<SyncRequest, SyncReply> > stream) {
+          SyncRequest request;
+          SyncReply reply;
+
+          request.set_ip("0.0.0.0");
+          request.set_command(SyncRequest_Commands_WRITES_STATUS);
+
+          while(1) {
+            stream->Write(request);
+            cout << "[INFO]: sent SyncRequest_Commands_WRITES_STATUS request to Primary" << endl;
+            
+            stream->Read(&reply);
+
+            int inflight_writes = reply.inflight_writes();
+            int pending_writes = reply.pending_writes();
+
+            cout << "[INFO]: recv from primary:" << pending_writes  << "," << inflight_writes << endl;
+
+            if (inflight_writes == 0) {
+              return pending_writes; 
+            }
+          }
+      }
+
+      bool commit_txns(std::shared_ptr<ClientReaderWriter<SyncRequest, SyncReply> > stream, int txn_count) {
+        SyncRequest request;
+        SyncReply reply;
+
+        request.set_ip("0.0.0.0");
+        request.set_command(SyncRequest_Commands_GET_WRITES);
+
+        
+        stream->Write(request);
+        cout << "[INFO]: sent SyncRequest_Commands_WRITES_STATUS request to Primary" << endl;
+
+        request.set_command(SyncRequest_Commands_ACK_PREV);
+
+        for(int i = 0; i < txn_count; i++) {
+            stream->Read(&reply);
+            cout << "[INFO:] recv reply for packet number- " << reply.error() << endl;
+            
+            stream->Write(request);
+            cout << "[INFO:] sent ack for packet number - " << reply.error() << endl;
+        }
+        
+        return true;
+      }
+
+      void Sync() {
+        ClientContext context;
+
+        std::shared_ptr<ClientReaderWriter<SyncRequest, SyncReply> > stream(
+            stub_->Sync(&context));
+
+        // step - 1: stop writes at Primary
+        stop_writes(stream);
+
+        // step - 2: get the status of writes
+        int txn_count = wait(stream);
+
+        cout << "[INFO]: starting syncing for txns:" << txn_count << endl;
+        // step - 3: get all writes
+        bool txn_status = commit_txns(stream, txn_count);
+
+        stream->WritesDone();
+        Status status = stream->Finish();
+
+        if (!status.ok()) {
+          cout << "SYNC failed." << endl;
+        } else {
+          cout << "SYNC worked" << endl;
+        }
+      }
+};
+
+void *Test(void* arg) {
+  string target_str = "localhost:50052";
+  ServiceCommClient serviceCommClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+  serviceCommClient.Sync();
+
+  return NULL;
+}
+
 int main(int argc, char** argv) {
   PrepareStorage();
   // Write Ahead Logger
@@ -492,12 +622,15 @@ int main(int argc, char** argv) {
   sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
+  pthread_t test_t;
   int port1 = 50051, port2 = 50052;
   pthread_create(&block_server_t, NULL, RunBlockStorageServer, (void *)&port1);
   pthread_create(&comm_server_t, NULL, RunCommServer, (void *)&port2);
+  pthread_create(&test_t, NULL, Test, NULL);
 
   pthread_join(block_server_t, NULL);
   pthread_join(comm_server_t, NULL);
+  pthread_join(test_t, NULL);
 
   return 0;
 }

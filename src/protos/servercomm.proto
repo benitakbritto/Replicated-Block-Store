@@ -55,7 +55,7 @@ message SyncRequest {
     Commands command = 2;
     enum Commands {
         STOP_WRITE = 0;
-        WRITES_IN_FLIGHT = 1;
+        WRITES_STATUS = 1;
         GET_WRITES = 2;
         ACK_PREV = 3;
     }
@@ -63,8 +63,9 @@ message SyncRequest {
 
 message SyncReply {
     uint32 error = 1;
-    uint32 count = 2;
-    repeated Operation ops = 3;
+    uint32 pending_writes = 2;
+    uint32 inflight_writes = 3;
+    repeated Operation ops = 4;
 }
 
 message Operation {

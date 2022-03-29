@@ -106,11 +106,13 @@ foreach(_target
   add_library(atl "util/address_translation.cc")
   add_library(wal "util/wal.cc")
   add_library(txn "util/txn.cc")
+  add_library(kv "util/kv_store.cc")
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     atl
     wal
     txn
+    kv
     hw_grpc_proto
     comm_grpc_proto
     ${_REFLECTION}

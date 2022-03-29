@@ -30,6 +30,7 @@ using grpc::ServerWriter;
 
 using namespace blockstorage;
 using namespace std;
+using namespace std::chrono;
 
 #define BLOCK_SIZE 4096
 
@@ -96,7 +97,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   string CreateTransactionId()
   {
-    return to_string(std::chrono::system_clock::now());
+    return to_string(duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count());
   }
 
   Status Read(ServerContext* context, const ReadRequest* request,

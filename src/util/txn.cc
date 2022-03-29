@@ -1,5 +1,7 @@
 #include "txn.h"
 #include <utility>
+#include <semaphore.h>
+#include <threads.h>
 
 Txn::Txn() {
     this->status = "";
@@ -21,7 +23,7 @@ vector<pair<string, string>> Txn::get_ops() {
     return this->ops;
 }
 
-int main1() {
+int main() {
     Txn txn;
 
     txn.set_status("ST1");
@@ -36,6 +38,14 @@ int main1() {
     vector<pair<string, string>> ops_from_class = txn.get_ops();
     cout << ops_from_class[0].first << endl;
     cout << ops_from_class[1].second << endl;
+
+    sem_t lock;
+
+    sem_init(&lock, 0, 2);
+
+    int val = 100;
+    cout << sem_getvalue(&lock, &val) << endl;
+    cout << val << endl;
 
     return 0;
 }

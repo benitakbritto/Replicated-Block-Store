@@ -7,7 +7,7 @@ service ServiceComm
     rpc Prepare(PrepareRequest) returns (PrepareReply) {}
     rpc Commit(CommitRequest) returns (CommitReply) {}
     rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusReply) {}
-    rpc Sync(SyncRequest) returns (stream SyncReply);
+    rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
 }
 
 message PrepareRequest
@@ -47,10 +47,19 @@ message GetTransactionStatusReply
 
 message SyncRequest {
     string ip = 1;
+    Commands command = 2;
+    enum Commands {
+        STOP_WRITE = 0;
+        WRITES_IN_FLIGHT = 1;
+        GET_WRITES = 2;
+        ACK_PREV = 3;
+    }
 }
 
 message SyncReply {
-    repeated Operation ops = 1;
+    uint32 error = 1;
+    uint32 count = 2;
+    repeated Operation ops = 3;
 }
 
 message Operation {

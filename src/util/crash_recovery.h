@@ -52,7 +52,7 @@ typedef LogData Data;
 // #define STATE_RPC_INIT              "REPL_INIT"
 // #define STATE_COMMIT                "COMMIT"
 // #define STATE_PENDING_REPLICATION   "PENDING_REPLICATION"
-#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/src/WAL/self.log"
+#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/src/self.log" // TODO: Check this
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 #define DELIM                       ":"    

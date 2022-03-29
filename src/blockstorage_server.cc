@@ -104,7 +104,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   BlockStorageServiceImpl(string myIP){
     myIP=myIP;
     otherIP=SERVER_2;
-    _stub = ServiceComm::NewStub(grpc::CreateChannel(otherIP, grpc::InsecureChannelCredentials()));
+    _stub = ServiceComm::NewStub(grpc::CreateChannel("20.109.180.121:50052", grpc::InsecureChannelCredentials()));
   }
 
   string CreateTransactionId()
@@ -398,9 +398,9 @@ void PrepareStorage() {
 
 void *RunBlockStorageServer(void* _port) {
   int port = *((int*)_port);
-  SERVER_1 = "0.0.0.0:" + std::to_string(port);
-  std::string server_address(SERVER_1);
-  BlockStorageServiceImpl service(SERVER_1);
+  // SERVER_1 = "0.0.0.0:" + std::to_string(port);
+  std::string server_address("0.0.0.0:" + std::to_string(port));
+  BlockStorageServiceImpl service(server_address);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -423,8 +423,8 @@ void *RunBlockStorageServer(void* _port) {
 
 void *RunCommServer(void* _port) {
   int port = *((int*)_port);
-  SERVER_2 = "0.0.0.0:" + std::to_string(port);
-  std::string server_address(SERVER_2);
+  // SERVER_2 = "20.109.180.121:";
+  string server_address("0.0.0.0:" + to_string(port));
   ServiceCommImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);

@@ -25,8 +25,10 @@
 #include <unistd.h>
 #include "util/address_translation.h"
 #include "util/wal.h"
+#include "util/txn.h"
 #include <pthread.h>
 #include <signal.h>
+#include <map>
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
@@ -40,9 +42,9 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::ServerWriter;
 
 using namespace blockstorage;
-
 using namespace std;
 
 #define BLOCK_SIZE 4096
@@ -60,6 +62,10 @@ string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 WAL *wal;
+
+// stores the information about the txn
+// once txn is replicated across all replicas, it should be removed to avoid memory overflow
+volatile map<string, Txn> txn_map;
 
 class ServiceCommImpl final: public ServiceComm::Service {
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
@@ -82,6 +88,10 @@ class ServiceCommImpl final: public ServiceComm::Service {
 
   Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
     reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status Sync(ServerContext* context, const SyncRequest* request, ServerWriter<SyncReply>* writer) {
     return Status::OK;
   }  
 };

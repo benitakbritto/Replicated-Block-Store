@@ -1,5 +1,3 @@
-// TODO: Link to cmake
-
 #include "crash_recovery.h"
 #include <unordered_map>
 #include <fstream>
@@ -22,6 +20,7 @@ void ExecuteTransactionStartRecovery(string id);
 void ExecuteTransactionAbortRecovery(string id);
 void ExecuteTransactionRpcInitRecovery(string id);
 void ExecuteTransactionCommitRecovery(string id);
+void ExecuteTransactionPendingReplicationRecovery(string id);
 void DeleteFiles(vector<string> file_names);
 //void GetStateFromOtherServer();
 //void ForceCommitOnOtherServer();
@@ -31,11 +30,13 @@ int GetOperation(string op);
 void PrintLogData(string id);
 string GetUndoFileName(string file_name);
 
+
 // Tester
 // int main()
 // {
 //     CrashRecovery cr;
 //     cr.Recover();
+//     PrintLogData("1");
 //     return 0;
 // }
 
@@ -44,6 +45,11 @@ int CrashRecovery::Recover()
     dbgprintf("Recover: Entering function\n");
     LoadData();
 
+    // TODO: 
+    // Get pending writes from other server and 
+    // apply it if the txn id on the current server's log
+    // is not commit
+    
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {
         dbgprintf("Recover: Transation id = %s\n", it->first.c_str());
@@ -61,6 +67,8 @@ int CrashRecovery::Recover()
             case COMMIT:
                 ExecuteTransactionCommitRecovery(it->first);
                 break;
+            case PENDING_REPLICATION:
+                ExecuteTransactionPendingReplicationRecovery(it->first);
             default:
                 dbgprintf("Recover: Error: Invalid state\n");
                 return -1;
@@ -275,6 +283,13 @@ void ExecuteTransactionCommitRecovery(string id)
     DeleteFiles(files_to_delete);
 
     dbgprintf("ExecuteTransactionCommitRecovery: Exiting function\n");
+}
+
+void ExecuteTransactionPendingReplicationRecovery(string id)
+{
+    dbgprintf("ExecuteTransactionPendingReplicationRecovery: Entering function\n");
+    // Do nothing for now
+    dbgprintf("ExecuteTransactionPendingReplicationRecovery: Exiting function\n");
 }
 
 void DeleteFiles(vector<string> file_names)

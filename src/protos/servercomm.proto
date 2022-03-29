@@ -10,13 +10,18 @@ service ServiceComm
     rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
 }
 
+message FileData
+{
+    string file_name = 1;
+    optional uint32 offset = 2;
+    optional uint32 size = 3;
+}
+
 message PrepareRequest
 {
     string transationId = 1;
     string buffer = 2;
-    repeated string file_name = 3;
-    repeated uint32 offset = 4;
-    repeated uint32 size = 5;
+    repeated FileData file_data = 3;
 }
 
 message PrepareReply
@@ -27,7 +32,7 @@ message PrepareReply
 message CommitRequest
 {
     string transationId = 1;
-    repeated string file_name = 2;
+    repeated FileData file_data = 2;
 }
 
 message CommitReply

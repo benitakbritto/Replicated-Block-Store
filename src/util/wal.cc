@@ -26,7 +26,7 @@ int WAL::log_prepare(string txn_id, vector<pair<string, string>> rename_movs) {
 
     sem_wait(&lock);
 
-    string log = txn_id + DELIM + TXN_START + "\n";
+    string log = txn_id + DELIM + STATE_START + "\n";
 
     for(auto paths: rename_movs) {
         log += txn_id + DELIM + MV + DELIM + paths.first + DELIM + paths.second + "\n"; 
@@ -48,7 +48,7 @@ int WAL::log_prepare(string txn_id, vector<pair<string, string>> rename_movs) {
 int WAL::log_abort(string txn_id) {
     sem_wait(&lock);
 
-    string log = txn_id + DELIM + ABORT + "\n";
+    string log = txn_id + DELIM + STATE_ABORT + "\n";
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
@@ -65,7 +65,7 @@ int WAL::log_abort(string txn_id) {
 int WAL::log_commit(string txn_id) {
     sem_wait(&lock);
 
-    string log = txn_id + DELIM + COMMIT + "\n";
+    string log = txn_id + DELIM + STATE_COMMIT + "\n";
     int res = write(fd, log.c_str(), log.size());
     
     if (res == -1) {
@@ -82,7 +82,7 @@ int WAL::log_commit(string txn_id) {
 int WAL::log_replication_init(string txn_id) {
     sem_wait(&lock);
 
-    string log = txn_id + DELIM + REPL_INIT + "\n";
+    string log = txn_id + DELIM + STATE_RPC_INIT + "\n";
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
@@ -96,11 +96,38 @@ int WAL::log_replication_init(string txn_id) {
     return res;
 }
 
+int WAL::log_pending_replication(string txn_id) {
+    sem_wait(&lock);
+
+    string log = txn_id + DELIM + STATE_PENDING_REPLICATION + "\n";
+    int res = write(fd, log.c_str(), log.size());
+
+    if (res == -1) {
+        cout << "[ERROR]: PENDING_REPLICATION - failed to write " << log << endl; 
+        cout << "[ERROR]:" << strerror(errno) << endl;
+    } else {
+        fsync(fd);
+    }
+
+    sem_post(&lock);
+    return res;
+}
+
 const string WAL::DELIM = ":";
 
 // COMMANDS
-const string WAL::TXN_START = "TXN_START";
 const string WAL::MV = "MV";
-const string WAL::COMMIT = "COMMIT";
-const string WAL::ABORT = "ABORT";
-const string WAL::REPL_INIT = "REPL_INIT";
+
+// Tester
+// int main()
+// {
+//     WAL wal("/home/benitakbritto/CS-739-P3/src/WAL/");
+//     wal.log_abort("1");
+//     vector<pair<string, string>> p;
+//     p.push_back({"a", "b"});
+//     wal.log_prepare("1", p);
+//     wal.log_commit("2");
+//     wal.log_replication_init("3");
+//     wal.log_pending_replication("400");
+//     return 0;
+// }

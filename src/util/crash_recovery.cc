@@ -36,6 +36,7 @@ string GetUndoFileName(string file_name);
 // {
 //     CrashRecovery cr;
 //     cr.Recover();
+//     PrintLogData("1");
 //     return 0;
 // }
 

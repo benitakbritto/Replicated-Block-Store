@@ -44,10 +44,11 @@ int CrashRecovery::Recover()
     dbgprintf("Recover: Entering function\n");
     LoadData();
 
-    // TODO: Get pending writes from other server and 
+    // TODO: 
+    // Get pending writes from other server and 
     // apply it if the txn id on the current server's log
     // is not commit
-
+    
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {
         dbgprintf("Recover: Transation id = %s\n", it->first.c_str());

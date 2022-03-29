@@ -25,27 +25,26 @@
 #include <unistd.h>
 #include "util/address_translation.h"
 #include "util/wal.h"
+#include "util/txn.h"
+#include <pthread.h>
+#include <signal.h>
+#include <map>
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 
-#ifdef BAZEL_BUILD
-#include "examples/protos/blockstorage.grpc.pb.h"
-#else
+
 #include "blockstorage.grpc.pb.h"
-#endif
+#include "servercomm.grpc.pb.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using blockstorage::BlockStorage;
-using blockstorage::ReadReply;
-using blockstorage::ReadRequest;
-using blockstorage::WriteReply;
-using blockstorage::WriteRequest;
+using grpc::ServerWriter;
 
+using namespace blockstorage;
 using namespace std;
 
 #define BLOCK_SIZE 4096
@@ -63,6 +62,39 @@ string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 WAL *wal;
+
+// stores the information about the txn
+// once txn is replicated across all replicas, it should be removed to avoid memory overflow
+volatile map<string, Txn> txn_map;
+
+class ServiceCommImpl final: public ServiceComm::Service {
+  Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
+    // TODO: 4.1 Create and cp tmp file
+    // TODO: 4.2 Write to WAL
+    // TODO 4.3 Create and cp undo
+    // TODO 4.4 Add id to KV store
+    
+    reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status Commit(ServerContext* context, const CommitRequest* request, CommitReply* reply) override {
+    // TODO: 6.1 Rename 
+    // TODO: 6.2 WAL Commit
+    // TODO: 6.3 Remove from KV store
+    reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
+    reply->set_status(0);
+    return Status::OK;
+  }
+
+  Status Sync(ServerContext* context, const SyncRequest* request, ServerWriter<SyncReply>* writer) {
+    return Status::OK;
+  }  
+};
 
 // Logic and data behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
@@ -117,15 +149,16 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     int address = request->addr();
     string data = request->buffer();
     int start = 0;
-    // TODO: Call ATL to fetch actual address
+    // fetch files from ATL
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
-
+    
     for(PathData pd : pathData) {
       int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
       if (fd == -1){
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
+      // TODO: 3.2 : create and cp tmp
       std::string temp_path = generateTempPath(pd.path.c_str());
       int bytesWritten = WriteToTempFile(temp_path, data.c_str()+start, pd.size, pd.offset);
       
@@ -140,8 +173,40 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n");
       }
+      // TODO: 3.3 Write txn to WAL (start + mv)
       start+=pd.size;
       close(fd);
+      // TODO: 3.4 create and cp to undo file
+      // TODO: 3.5 Add id to KV store (ordered map)
+      // TODO: 3.6 call prepare()
+      // TODO: if prepare() succeeds
+        // TODO: 5.1 rename 
+        // TODO: 5.2 WAL RPCinit
+        // TODO: 5.3 Update KV store
+        // TODO: 5.4 call commit()
+        // TODO: 5.5 if commit() succeeds:
+          // TODO: 7.1 WAL commit
+          // TODO: 7.2 Remove from KV store
+          // TODO: 7.3 Respond success
+        // TODO: 5.6 if commit() fails:
+          // TODO: if backup is unavailable
+            // TODO: 6.1 rename 
+            // TODO: 6.2 WAL "pending replication"
+            // TODO: 6.3 Update KV store "Pending on backup"
+          // Else
+            // Remove from KV store
+            // Return failure
+          
+      // TODO: if prepare() fails
+        // TODO: 5.1 check status==Unavailable
+          // TODO: 6.1 rename 
+          // TODO: 6.2 WAL "pending replication"
+          // TODO: 6.3 Update KV store "Pending on backup"
+        // TODO: 5.1 Else
+          // TODO: 6.1 WAL Abort
+          // TODO: 6.2 Remove from KV
+          // TODO: 6.3 Send failure status
+
       // TODO: save to cache
       rename(temp_path.c_str(), pd.path.c_str());
     }
@@ -182,7 +247,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   string generateTempPath(std::string path){
-    return path + ".tmp" + to_string(rand() % 101743);
+    return path + ".tmp";
   }
 };
 
@@ -227,7 +292,8 @@ void PrepareStorage() {
   }
 }
 
-void RunServer(int port) {
+void *RunBlockStorageServer(void* _port) {
+  int port = *((int*)_port);
 
   std::string server_address("0.0.0.0:" + std::to_string(port));
   BlockStorageServiceImpl service;
@@ -242,18 +308,54 @@ void RunServer(int port) {
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
+
+  return NULL;
+}
+
+void *RunCommServer(void* _port) {
+  int port = *((int*)_port);
+
+  std::string server_address("0.0.0.0:" + std::to_string(port));
+  ServiceCommImpl service;
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "CommServer listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  server->Wait();
+
+  return NULL;
 }
 
 int main(int argc, char** argv) {
   PrepareStorage();
   // Write Ahead Logger
   wal = new WAL(SERVER_STORAGE_PATH);
-  RunServer(50051);
+
+  cout << getpid() << endl;
+
+  pthread_t block_server_t, comm_server_t;
+  int port1 = 50051, port2 = 50052;
+  pthread_create(&block_server_t, NULL, RunBlockStorageServer, (void *)&port1);
+  pthread_create(&comm_server_t, NULL, RunCommServer, (void *)&port2);
+
+  pthread_join(block_server_t, NULL);
+  pthread_join(comm_server_t, NULL);
 
   return 0;
 }

@@ -104,22 +104,3 @@ const string WAL::MV = "MV";
 const string WAL::COMMIT = "COMMIT";
 const string WAL::ABORT = "ABORT";
 const string WAL::REPL_INIT = "REPL_INIT";
-
-int main1() {
-    string base_path = "/home/benitakbritto/hemal/CS-739-P3/storage/";
-
-    WAL wal(base_path);
-    string txn_id("12345");
-
-    wal.log_commit(txn_id);
-    wal.log_abort(txn_id);
-    wal.log_replication_init(txn_id);
-
-    vector<pair<string, string>> moves;
-    moves.push_back(make_pair("from1", "to1"));
-    moves.push_back(make_pair("from2", "to2"));
-    
-    wal.log_prepare(txn_id, moves);
-
-    return 0;
-}

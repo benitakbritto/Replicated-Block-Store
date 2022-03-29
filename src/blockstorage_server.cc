@@ -217,12 +217,15 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
       // 5.4 call commit()
       int commitResp = callCommit(txnId, pathData);
-        // TODO: 5.5 if commit() succeeds:
+        // 5.5 if commit() succeeds:
         if (commitResp == grpc::StatusCode::OK)
         {
-          // TODO: 7.1 WAL commit
-          // TODO: 7.2 Remove from KV store
-          // TODO: 7.3 Respond success
+          // 7.1 WAL commit
+          wal->log_commit(txnId);
+          // 7.2 Remove from KV store
+          kvObj.DeleteFromKVStore(KV_STORE, txnId);
+          // 7.3 Respond success
+          return Status::OK;
         }
         // TODO: commit() fails: if backup is unavailable
         else if (commitResp == grpc::StatusCode::UNAVAILABLE)

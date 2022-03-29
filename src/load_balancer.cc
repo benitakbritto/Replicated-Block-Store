@@ -21,7 +21,7 @@ using blockstorage::WriteRequest;
 using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
-#define BACKUP_IP "0.0.0.0:50051"
+#define BACKUP_IP "20.109.180.121:50051"
 
 class LoadBalancer final : public BlockStorage::Service {
 

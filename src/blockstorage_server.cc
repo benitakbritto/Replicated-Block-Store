@@ -10,9 +10,11 @@
 #include "util/txn.h"
 #include "util/state.h"
 #include "util/kv_store.h"
+#include <map>
+#include <semaphore.h>
 #include <pthread.h>
 #include <signal.h>
-#include <map>
+#include <stdlib.h>
 #include <chrono>
 #include <ctime> 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
@@ -30,13 +32,9 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::ServerReaderWriter;
 using grpc::ServerWriter;
-using blockstorage::PrepareRequest;
-using blockstorage::PrepareReply;
-using blockstorage::CommitRequest;
-using blockstorage::CommitReply;
 using namespace blockstorage;
-using namespace std;
 using namespace std::chrono;
 using namespace std;
 
@@ -64,6 +62,13 @@ string SERVER_2;
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
 volatile map<string, Txn> txn_map;
 
+// use this to block all writes during syncing backups
+sem_t global_write_lock;
+
+// TODO:: make this atomic counter to count the number of writes in flight
+// then just do normal ++ and -- operations
+int writes_in_flight = 0;
+
 class ServiceCommImpl final: public ServiceComm::Service {
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
     // TODO: 4.1 Create and cp tmp file
@@ -88,7 +93,39 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
-  Status Sync(ServerContext* context, const SyncRequest* request, ServerWriter<SyncReply>* writer) {
+  Status Sync(ServerContext* context, ServerReaderWriter<SyncReply, SyncRequest>* stream) override{
+    SyncRequest request;
+
+    while (stream->Read(&request)) {
+        #ifdef DEBUG
+          cout << "[INFO]: Recv sync request from [IP:]" << request.ip() << endl;
+        #endif
+
+        SyncRequest_Commands command = request.command();
+
+        if (SyncRequest_Commands_STOP_WRITE == command) {
+          sem_wait(&global_write_lock);
+          SyncReply reply;
+          reply.set_error(0);
+          stream->Write(reply);
+        } else if (SyncRequest_Commands_WRITES_IN_FLIGHT == command) {
+          SyncReply reply;
+          reply.set_count(writes_in_flight);
+          stream->Write(reply);
+        } else if (SyncRequest_Commands_GET_WRITES == command) {
+          // TODO: get all write txn from map one by one
+
+          // Step - 1: Send Ops
+          // Step - 2: Wait for the ack and then update the local KV store
+        } else {
+            cout << "[ERROR]: Unknown command" << endl;
+            break;
+        }
+        
+    }
+
+    sem_post(&global_write_lock);
+
     return Status::OK;
   }  
 };
@@ -451,7 +488,8 @@ int main(int argc, char** argv) {
   // Write Ahead Logger
   wal = new WAL(SERVER_STORAGE_PATH);
 
-  cout << getpid() << endl;
+  // global write semaphore
+  sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
   int port1 = 50051, port2 = 50052;

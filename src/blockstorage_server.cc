@@ -63,11 +63,19 @@ WAL *wal;
 
 class ServiceCommImpl final: public ServiceComm::Service {
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
+    // TODO: 4.1 Create and cp tmp file
+    // TODO: 4.2 Write to WAL
+    // TODO 4.3 Create and cp undo
+    // TODO 4.4 Add id to KV store
+    
     reply->set_status(0);
     return Status::OK;
   }
 
   Status Commit(ServerContext* context, const CommitRequest* request, CommitReply* reply) override {
+    // TODO: 6.1 Rename 
+    // TODO: 6.2 WAL Commit
+    // TODO: 6.3 Remove from KV store
     reply->set_status(0);
     return Status::OK;
   }
@@ -131,15 +139,16 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     int address = request->addr();
     string data = request->buffer();
     int start = 0;
-    // TODO: Call ATL to fetch actual address
+    // fetch files from ATL
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
-
+    
     for(PathData pd : pathData) {
       int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
       if (fd == -1){
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
+      // TODO: 3.2 : create and cp tmp
       std::string temp_path = generateTempPath(pd.path.c_str());
       int bytesWritten = WriteToTempFile(temp_path, data.c_str()+start, pd.size, pd.offset);
       
@@ -154,8 +163,40 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n");
       }
+      // TODO: 3.3 Write txn to WAL (start + mv)
       start+=pd.size;
       close(fd);
+      // TODO: 3.4 create and cp to undo file
+      // TODO: 3.5 Add id to KV store (ordered map)
+      // TODO: 3.6 call prepare()
+      // TODO: if prepare() succeeds
+        // TODO: 5.1 rename 
+        // TODO: 5.2 WAL RPCinit
+        // TODO: 5.3 Update KV store
+        // TODO: 5.4 call commit()
+        // TODO: 5.5 if commit() succeeds:
+          // TODO: 7.1 WAL commit
+          // TODO: 7.2 Remove from KV store
+          // TODO: 7.3 Respond success
+        // TODO: 5.6 if commit() fails:
+          // TODO: if backup is unavailable
+            // TODO: 6.1 rename 
+            // TODO: 6.2 WAL "pending replication"
+            // TODO: 6.3 Update KV store "Pending on backup"
+          // Else
+            // Remove from KV store
+            // Return failure
+          
+      // TODO: if prepare() fails
+        // TODO: 5.1 check status==Unavailable
+          // TODO: 6.1 rename 
+          // TODO: 6.2 WAL "pending replication"
+          // TODO: 6.3 Update KV store "Pending on backup"
+        // TODO: 5.1 Else
+          // TODO: 6.1 WAL Abort
+          // TODO: 6.2 Remove from KV
+          // TODO: 6.3 Send failure status
+
       // TODO: save to cache
       rename(temp_path.c_str(), pd.path.c_str());
     }
@@ -196,7 +237,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   string generateTempPath(std::string path){
-    return path + ".tmp" + to_string(rand() % 101743);
+    return path + ".tmp";
   }
 };
 

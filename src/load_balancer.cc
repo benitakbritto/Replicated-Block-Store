@@ -60,7 +60,7 @@ class LoadBalancer final : public BlockStorage::Service {
 
             idx=1-idx; //2 servers
 
-            string read_buf = bs_clients[0]->Read(request->addr());
+            string read_buf = bs_clients[idx]->Read(request->addr());
             if(reply->error()==0){
                 reply->set_buffer(read_buf);
                 return Status::OK;
@@ -69,13 +69,12 @@ class LoadBalancer final : public BlockStorage::Service {
             }
         }
 
-        // string Write(ServerContext* context, const ReadRequest* request,
-        //           ReadReply* reply) override {
-     
-        //     ClientContext context;
-        //     idx=1-idx; //2 servers
-        //     return Write(&context, request, &reply, stubs[idx]);
-        // }
+        string Write(ServerContext* context, const ReadRequest* request,
+                  ReadReply* reply) override {
+            idx=1-idx; //2 servers
+            string resp = bs_clients[idx]->Write(request->addr(), request->buffer());
+            return Status::OK;
+        }
 
 };
 

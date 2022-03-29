@@ -69,12 +69,12 @@ class LoadBalancer final : public BlockStorage::Service {
             }
         }
 
-        string Write(ServerContext* context, const ReadRequest* request,
-                  ReadReply* reply) override {
-            idx=1-idx; //2 servers
-            string resp = bs_clients[idx]->Write(request->addr(), request->buffer());
-            return Status::OK;
-        }
+        // string Write(ServerContext* context, const ReadRequest* request,
+        //           ReadReply* reply) override {
+        //     idx=1-idx; //2 servers
+        //     string resp = bs_clients[idx]->Write(request->addr(), request->buffer());
+        //     return Status::OK;
+        // }
 
 };
 

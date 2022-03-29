@@ -308,14 +308,11 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     CommitReply reply;
 
     request.set_transationid(txnId);
-    /*
-      TODO: ADD FILE NAMES - CHANGE IN PROTO FOR REPEATED FIELD? 
-      UNCOMMENT THE FOLLOWING LINES TO SEE THE ERROR
-    */
-    // string* file_name = request.add_file_name();
-    // for(PathData pd: pathData){
-    //   file_name->set_file_name(pd.path);
-    // }
+    
+    auto * file_data = request.add_file_data();
+    for(PathData pd: pathData){
+      file_data->set_file_name(pd.path);
+    }
     
     Status status = _stub->Commit(&context, request, &reply);
     if(!status.ok()) 

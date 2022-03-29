@@ -203,7 +203,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // 3.6 call prepare()
     int prepareResp = callPrepare(txnId, buffer, pathData);
     
-    if(prepareResp == grpc::StatusCode::OK){ //if prepare() succeeds  
+    if(prepareResp == grpc::StatusCode::OK) { //if prepare() succeeds  
       // 5.1 rename 
       for(pair<string,string> temp_file_pair: rename_movs){
         // old name (tmp file), new name (original file)
@@ -218,20 +218,36 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       // 5.4 call commit()
       int commitResp = callCommit(txnId, pathData);
         // TODO: 5.5 if commit() succeeds:
+        if (commitResp == grpc::StatusCode::OK)
+        {
           // TODO: 7.1 WAL commit
           // TODO: 7.2 Remove from KV store
           // TODO: 7.3 Respond success
-        // TODO: 5.6 if commit() fails:
-          // TODO: if backup is unavailable
-            // TODO: 6.1 rename 
+        }
+        // TODO: commit() fails: if backup is unavailable
+        else if (commitResp == grpc::StatusCode::UNAVAILABLE)
+        {
+          // TODO: 6.1 rename 
+          for(pair<string,string> temp_file_pair: rename_movs) {
+            // old name (tmp file), new name (original file)
+            rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
+          }
             // TODO: 6.2 WAL "pending replication"
+            wal->log_pending_replication(txnId);
             // TODO: 6.3 Update KV store "Pending on backup"
-          // Else
-            // Remove from KV store
-            // Return failure
+            kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
+        }
+        // TODO: if commit() fails
+        else
+        {
+          // Remove from KV store
+          kvObj.DeleteFromKVStore(KV_STORE, txnId);
+          // Return failure
+          return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
+        }       
     }
-      
-    else{ // TODO: if prepare() fails
+    // TODO: if prepare() fails
+    else{ 
       // TODO: 5.1 check status==Unavailable
       if (prepareResp == grpc::StatusCode::UNAVAILABLE)
       {

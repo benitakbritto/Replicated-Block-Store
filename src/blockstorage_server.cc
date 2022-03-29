@@ -8,6 +8,8 @@
 #include "util/address_translation.h"
 #include "util/wal.h"
 #include "util/txn.h"
+#include "util/state.h"
+#include "util/kv_store.h"
 #include <pthread.h>
 #include <signal.h>
 #include <map>
@@ -18,15 +20,20 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 
-
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
 
+using grpc::Channel;
+using grpc::ClientContext;
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::ServerWriter;
+using blockstorage::PrepareRequest;
+using blockstorage::PrepareReply;
+using blockstorage::CommitRequest;
+using blockstorage::CommitReply;
 
 using namespace blockstorage;
 using namespace std;
@@ -47,6 +54,10 @@ string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 
 AddressTranslation atl;
 WAL *wal;
+map<string, int> KV_STORE;
+KVStore kvObj;
+string SERVER_1;
+string SERVER_2;
 
 // stores the information about the txn
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
@@ -81,19 +92,19 @@ class ServiceCommImpl final: public ServiceComm::Service {
   }  
 };
 
-// Logic and data behind the server's behavior.
+// Logic and buffer behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
+
+  string myIP;
+  string otherIP;
+  std::unique_ptr<ServiceComm::Stub> _stub;
   
-  // std::vector<PathData> testATLSim(){
-  //   // cout<<"reached atl \n";
-  //   PathData testpd;
-  //   testpd.path="/home/benitakbritto/CS-739-P3/src/abc.txt";
-  //   testpd.size=30;
-  //   testpd.offset=0;
-  //   std::vector<PathData> pdVec;
-  //   pdVec.push_back(testpd);
-  //   return pdVec;
-  // }
+  public:
+  BlockStorageServiceImpl(string myIP){
+    myIP=myIP;
+    otherIP=SERVER_2;
+    _stub = ServiceComm::NewStub(grpc::CreateChannel(otherIP, grpc::InsecureChannelCredentials()));
+  }
 
   string CreateTransactionId()
   {
@@ -137,11 +148,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
                   WriteReply* reply) override {
     
     int address = request->addr();
-    string data = request->buffer();
+    string buffer = request->buffer();
     int start = 0;
     // fetch files from ATL
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
     
+    vector<pair<string, string>> rename_movs;
+    // write to tmp files
     for(PathData pd : pathData) {
       int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
       if (fd == -1){
@@ -149,8 +162,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
       // TODO: 3.2 : create and cp tmp
-      std::string temp_path = generateTempPath(pd.path.c_str());
-      int bytesWritten = WriteToTempFile(temp_path, data.c_str()+start, pd.size, pd.offset);
+      string temp_path = generateTempPath(pd.path.c_str());
+      rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
+
+      int bytesWritten = WriteToTempFile(temp_path, buffer.c_str()+start, pd.size, pd.offset);
       
       if (bytesWritten == -1){
         
@@ -163,17 +178,38 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n");
       }
-      // TODO: 3.3 Write txn to WAL (start + mv)
       start+=pd.size;
       close(fd);
-      // TODO: 3.4 create and cp to undo file
-      // TODO: 3.5 Add id to KV store (ordered map)
-      // TODO: 3.6 call prepare()
-      // TODO: if prepare() succeeds
-        // TODO: 5.1 rename 
-        // TODO: 5.2 WAL RPCinit
-        // TODO: 5.3 Update KV store
-        // TODO: 5.4 call commit()
+  
+      // TODO: save to cache
+     // rename(temp_path.c_str(), pd.path.c_str());
+    }
+
+    // TODO: 3.3 Write txn to WAL (start + mv)
+    string txnId = createTransactionId();
+    wal->log_prepare(txnId, rename_movs);
+    
+    // TODO: 3.4 create and cp to undo file - NOT NEEDED
+
+    // Add id to KV store (ordered map)
+    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
+    
+    // 3.6 call prepare()
+    int prepareResp = callPrepare(txnId, buffer, pathData);
+    
+    if(prepareResp == 0){ //if prepare() succeeds  
+      // 5.1 rename 
+      for(pair<string,string> temp_file_pair: rename_movs){
+        rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str()); //Check order: <tmp, original> ???
+      }
+      // 5.2 WAL RPCinit
+      wal->log_replication_init(txnId);
+      
+      // 5.3 Update KV store
+      kvObj.UpdateStateOnKVStore(KV_STORE, txnId, RPC_INIT);
+
+      // 5.4 call commit()
+      int commitResp = callCommit(txnId, pathData);
         // TODO: 5.5 if commit() succeeds:
           // TODO: 7.1 WAL commit
           // TODO: 7.2 Remove from KV store
@@ -186,7 +222,9 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
           // Else
             // Remove from KV store
             // Return failure
-          
+    }
+      
+    else{
       // TODO: if prepare() fails
         // TODO: 5.1 check status==Unavailable
           // TODO: 6.1 rename 
@@ -196,18 +234,14 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
           // TODO: 6.1 WAL Abort
           // TODO: 6.2 Remove from KV
           // TODO: 6.3 Send failure status
-
-      // TODO: save to cache
-      rename(temp_path.c_str(), pd.path.c_str());
     }
-    
     return Status::OK;
   }
 
   int WriteToTempFile(const std::string temp_path, std::string buffer, unsigned int size, int offset){
     #ifdef IS_DEBUG_ON
 	  	  cout << "START:" << __func__ << endl;
-        cout<<"server to write data size "<< size <<" to file:"<<temp_path<<endl;
+        cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
 	  #endif
     
     int fd = open(temp_path.c_str(), O_CREAT|O_EXCL, 0777);
@@ -239,6 +273,57 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   string generateTempPath(std::string path){
     return path + ".tmp";
   }
+
+  string createTransactionId(){
+    return "";
+  }
+
+  int callPrepare(string txnId, string buf, vector<PathData> pathData){
+
+    ClientContext context;
+    PrepareRequest request;
+    PrepareReply reply;
+
+    request.set_transationid(txnId);
+    request.set_buffer(buf);
+    FileData* fileData = request.add_file_data();
+
+    for(PathData pd: pathData){
+      fileData->set_file_name(pd.path);
+      fileData->set_size(pd.size); 
+      fileData->set_offset(pd.offset);
+    }
+    
+    Status status = _stub->Prepare(&context, request, &reply);
+    if(!status.ok()) 
+      return -1;
+    else
+      return 0;
+  }
+
+  int callCommit(string txnId, vector<PathData> pathData){
+
+    ClientContext context;
+    CommitRequest request;
+    CommitReply reply;
+
+    request.set_transationid(txnId);
+    /*
+      TODO: ADD FILE NAMES - CHANGE IN PROTO FOR REPEATED FIELD? 
+      UNCOMMENT THE FOLLOWING LINES TO SEE THE ERROR
+    */
+    // string* file_name = request.add_file_name();
+    // for(PathData pd: pathData){
+    //   file_name->set_file_name(pd.path);
+    // }
+    
+    Status status = _stub->Commit(&context, request, &reply);
+    if(!status.ok()) 
+      return -1;
+    else
+      return 0;
+  }
+  
 };
 
 void PrepareStorage() {
@@ -280,13 +365,14 @@ void PrepareStorage() {
       }
     }
   }
+
 }
 
 void *RunBlockStorageServer(void* _port) {
   int port = *((int*)_port);
-
-  std::string server_address("0.0.0.0:" + std::to_string(port));
-  BlockStorageServiceImpl service;
+  SERVER_1 = "0.0.0.0:" + std::to_string(port);
+  std::string server_address(SERVER_1);
+  BlockStorageServiceImpl service(SERVER_1);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -309,8 +395,8 @@ void *RunBlockStorageServer(void* _port) {
 
 void *RunCommServer(void* _port) {
   int port = *((int*)_port);
-
-  std::string server_address("0.0.0.0:" + std::to_string(port));
+  SERVER_2 = "0.0.0.0:" + std::to_string(port);
+  std::string server_address(SERVER_2);
   ServiceCommImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);

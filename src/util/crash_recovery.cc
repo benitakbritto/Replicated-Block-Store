@@ -1,5 +1,3 @@
-// TODO: Link to cmake
-
 #include "crash_recovery.h"
 #include <unordered_map>
 #include <fstream>

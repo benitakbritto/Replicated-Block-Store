@@ -107,12 +107,14 @@ foreach(_target
   add_library(wal "util/wal.cc")
   add_library(txn "util/txn.cc")
   add_library(kv "util/kv_store.cc")
+  add_library(cr "util/crash_recovery.cc")
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     atl
     wal
     txn
     kv
+    cr
     hw_grpc_proto
     comm_grpc_proto
     ${_REFLECTION}

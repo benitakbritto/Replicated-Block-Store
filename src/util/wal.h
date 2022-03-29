@@ -7,6 +7,7 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include <cstring>
+#include "state.h"
 
 using namespace std;
 
@@ -19,12 +20,8 @@ class WAL {
         static const string DELIM;
 
         // COMMANDS
-        static const string TXN_START;
         static const string MV;
-        static const string COMMIT;
-        static const string ABORT;
-        static const string REPL_INIT;
-    
+       
     public:
         /**
          * @brief Construct a new WAL object
@@ -47,4 +44,6 @@ class WAL {
         int log_commit(string txn_id);
 
         int log_replication_init(string txn_id);
+
+        int log_pending_replication(string txn_id);
 };

@@ -15,14 +15,15 @@
 #include <map>
 #include <chrono>
 #include <ctime> 
-
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
-
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
 
+/******************************************************************************
+ * NAMESPACE
+ *****************************************************************************/
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Server;
@@ -34,31 +35,31 @@ using blockstorage::PrepareRequest;
 using blockstorage::PrepareReply;
 using blockstorage::CommitRequest;
 using blockstorage::CommitReply;
-
 using namespace blockstorage;
 using namespace std;
 using namespace std::chrono;
-
-#define BLOCK_SIZE 4096
-
 using namespace std;
 
+/******************************************************************************
+ * MACROS
+ *****************************************************************************/
+#define BLOCK_SIZE 4096
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
 // #define WARN
-
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
+/******************************************************************************
+ * GLOBALS
+ *****************************************************************************/
 string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
-
 AddressTranslation atl;
 WAL *wal;
 map<string, int> KV_STORE;
 KVStore kvObj;
 string SERVER_1;
 string SERVER_2;
-
 // stores the information about the txn
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
 volatile map<string, Txn> txn_map;
@@ -146,39 +147,44 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
-    
-    int address = request->addr();
-    string buffer = request->buffer();
+    int address = 0;
+    string buffer = "";
     int start = 0;
-    // fetch files from ATL
-    std::vector<PathData> pathData = atl.GetAllFileNames(address);
-    
+    vector<PathData> pathData;
     vector<pair<string, string>> rename_movs;
-    // write to tmp files
-    for(PathData pd : pathData) {
-      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
-      if (fd == -1){
-        reply->set_error(errno);
-        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
-      }
-      // TODO: 3.2 : create and cp tmp
-      string temp_path = generateTempPath(pd.path.c_str());
-      rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
+    string txnId = "";
 
-      int bytesWritten = WriteToTempFile(temp_path, buffer.c_str()+start, pd.size, pd.offset);
+    address = request->addr();
+    buffer = request->buffer();
+    
+    // fetch files from ATL
+    pathData = atl.GetAllFileNames(address);
+    
+    // TODO: 3.2 : create and cp tmp
+    for(PathData pd : pathData) {
+      // open orginial file
+      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
+      if (fd == -1) {
+        reply->set_error(errno);
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n"); // TODO: set correct status code
+      }
       
-      if (bytesWritten == -1){
-        
+      // get tmp file name
+      string temp_path = generateTempPath(pd.path.c_str());
+      // tmp file, orginal file
+      rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
+      // write to tmp file
+      int bytesWritten = WriteToTempFile(temp_path, buffer.c_str()+start, pd.size, pd.offset);
+      if (bytesWritten == -1) {
         #ifdef INFO
           cout << "pwrite failed" << endl;
         #endif
-
         reply->set_error(errno);
         perror(strerror(errno));
         close(fd);
-        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n");
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // TODO: set correct status code
       }
-      start+=pd.size;
+      start += pd.size;
       close(fd);
   
       // TODO: save to cache
@@ -186,21 +192,22 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
 
     // TODO: 3.3 Write txn to WAL (start + mv)
-    string txnId = createTransactionId();
+    txnId = CreateTransactionId();
     wal->log_prepare(txnId, rename_movs);
     
     // TODO: 3.4 create and cp to undo file - NOT NEEDED
 
-    // Add id to KV store (ordered map)
+    // TODO: 3.5 Add id to KV store (ordered map)
     kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     
     // 3.6 call prepare()
     int prepareResp = callPrepare(txnId, buffer, pathData);
     
-    if(prepareResp == 0){ //if prepare() succeeds  
+    if(prepareResp == grpc::StatusCode::OK){ //if prepare() succeeds  
       // 5.1 rename 
       for(pair<string,string> temp_file_pair: rename_movs){
-        rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str()); //Check order: <tmp, original> ???
+        // old name (tmp file), new name (original file)
+        rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
       }
       // 5.2 WAL RPCinit
       wal->log_replication_init(txnId);
@@ -224,16 +231,30 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
             // Return failure
     }
       
-    else{
-      // TODO: if prepare() fails
-        // TODO: 5.1 check status==Unavailable
-          // TODO: 6.1 rename 
-          // TODO: 6.2 WAL "pending replication"
-          // TODO: 6.3 Update KV store "Pending on backup"
-        // TODO: 5.1 Else
-          // TODO: 6.1 WAL Abort
-          // TODO: 6.2 Remove from KV
-          // TODO: 6.3 Send failure status
+    else{ // TODO: if prepare() fails
+      // TODO: 5.1 check status==Unavailable
+      if (prepareResp == grpc::StatusCode::UNAVAILABLE)
+      {
+        // TODO: 6.1 rename 
+        for(pair<string,string> temp_file_pair: rename_movs) {
+          // old name (tmp file), new name (original file)
+          rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
+        }
+        // TODO: 6.2 WAL "pending replication"
+        wal->log_pending_replication(txnId);
+        // TODO: 6.3 Update KV store "Pending on backup"
+        kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
+      }
+      // TODO: 5.1 Else
+      else
+      {
+        // TODO: 6.1 WAL Abort
+         wal->log_abort(txnId);
+        // TODO: 6.2 Remove from KV
+        kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // TODO: 6.3 Send failure status
+        return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
+      }   
     }
     return Status::OK;
   }
@@ -274,10 +295,6 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return path + ".tmp";
   }
 
-  string createTransactionId(){
-    return "";
-  }
-
   int callPrepare(string txnId, string buf, vector<PathData> pathData){
 
     ClientContext context;
@@ -295,10 +312,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Prepare(&context, request, &reply);
-    if(!status.ok()) 
-      return -1;
-    else
-      return 0;
+
+    return status.error_code();
   }
 
   int callCommit(string txnId, vector<PathData> pathData){
@@ -315,10 +330,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Commit(&context, request, &reply);
-    if(!status.ok()) 
-      return -1;
-    else
-      return 0;
+    return status.error_code();
   }
   
 };

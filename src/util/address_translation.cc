@@ -38,7 +38,6 @@ string AddressTranslation::GetFile(int address)
 */
 string AddressTranslation::GetPath(string dir, string file)
 {
-    string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/"; //TODO: Use the same from server.cc
     return SERVER_STORAGE_PATH + dir + '/' + file;
 }
 

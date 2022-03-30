@@ -318,7 +318,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // fetch files from ATL
     pathData = atl.GetAllFileNames(address);
     
-    // TODO: 3.2 : create and cp tmp
+    // 3.2 : create and cp tmp
     for(PathData pd : pathData) {
       // get tmp file name
       string temp_path = helper.GenerateTempPath(pd.path.c_str());
@@ -340,13 +340,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
      // rename(temp_path.c_str(), pd.path.c_str());
     }
     dbgprintf("temp files written\n");
-    // TODO: 3.3 Write txn to WAL (start + mv)
+    //  3.3 Write txn to WAL (start + mv)
     txnId = CreateTransactionId();
     wal->log_prepare(txnId, rename_movs);
     
-    // TODO: 3.4 create and cp to undo file - NOT NEEDED
+    // 3.4 create and cp to undo file - NOT NEEDED
 
-    // TODO: 3.5 Add id to KV store (ordered map)
+    // 3.5 Add id to KV store (ordered map)
     kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     
     // 3.6 call prepare()
@@ -376,20 +376,20 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
           // 7.3 Respond success
           return Status::OK;
         }
-        // TODO: commit() fails: if backup is unavailable
+        // commit() fails: if backup is unavailable
         else if (commitResp == grpc::StatusCode::UNAVAILABLE)
         {
-          // TODO: 6.1 rename 
+          // 6.1 rename 
           for(pair<string,string> temp_file_pair: rename_movs) {
             // old name (tmp file), new name (original file)
             rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
           }
-            // TODO: 6.2 WAL "pending replication"
+            // 6.2 WAL "pending replication"
             wal->log_pending_replication(txnId);
-            // TODO: 6.3 Update KV store "Pending on backup"
+            // 6.3 Update KV store "Pending on backup"
             kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
         }
-        // TODO: if commit() fails
+        // if commit() fails
         else
         {
           // Remove from KV store
@@ -398,29 +398,29 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
           return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
         }       
     }
-    // TODO: if prepare() fails
+    // if prepare() fails
     else{ 
-      // TODO: 5.1 check status==Unavailable
+      // 5.1 check status==Unavailable
       if (prepareResp == grpc::StatusCode::UNAVAILABLE)
       {
-        // TODO: 6.1 rename 
+        //  6.1 rename tmp to original file
         for(pair<string,string> temp_file_pair: rename_movs) {
           // old name (tmp file), new name (original file)
           rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
         }
-        // TODO: 6.2 WAL "pending replication"
+        // 6.2 WAL "pending replication"
         wal->log_pending_replication(txnId);
-        // TODO: 6.3 Update KV store "Pending on backup"
+        // 6.3 Update KV store "Pending on backup"
         kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
       }
-      // TODO: 5.1 Else
+      // 5.1 Else
       else
       {
-        // TODO: 6.1 WAL Abort
+        //  6.1 WAL Abort
          wal->log_abort(txnId);
-        // TODO: 6.2 Remove from KV
+        // 6.2 Remove from KV
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
-        // TODO: 6.3 Send failure status
+        // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
     }
@@ -467,8 +467,6 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     dbgprintf("Exiting callCommit\n");
     return status.error_code();
   }
-
-  
   
 };
 

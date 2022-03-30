@@ -73,24 +73,18 @@ class LoadBalancer final : public BlockStorage::Service {
             string key = getServerToRouteTo();
             dbgprintf("Routing read to %s\n", key.c_str());
 
-            string read_buf = bs_clients[key]->Read(request->addr());
-            if(reply->error()==0){
-                reply->set_buffer(read_buf);
-                return Status::OK;
-            } else { 
-                return grpc::Status(grpc::StatusCode::INTERNAL, "error in read");
-            }
+            return bs_clients[key]->Read(request->addr());
         }
 
         Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
-            int resp = bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
-            if (resp==grpc::StatusCode::OK){
-                return Status::OK;
-            } else { 
-                return grpc::Status(grpc::StatusCode::INTERNAL, "error in write");
-            }
+            return bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
+            // if (resp==grpc::StatusCode::OK){
+            //     return Status::OK;
+            // } else { 
+            //     return grpc::Status(grpc::StatusCode::INTERNAL, "error in write");
+            // }
         }
 
 };

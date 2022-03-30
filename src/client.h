@@ -46,8 +46,8 @@ public:
       : stub_(BlockStorage::NewStub(channel)) {}
     
     void Connect(string target);
-    int Write(int address, string buf);
-    string Read(int address);
+    Status Write(int address, string buf);
+    Status Read(int address);
 };
 
 #endif

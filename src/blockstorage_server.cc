@@ -171,7 +171,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
       dbgprintf("Prepare: writeResp = %d\n", writeResp);
       if(writeResp!=0){
         dbgprintf("Prepare: write to temp failed\n");
-        reply->set_status(errno);
+        // reply->set_status(errno);
         perror(strerror(errno));
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // Check suitable err code
       }
@@ -370,10 +370,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     
     // 3.6 call prepare()
-    int prepareResp = callPrepare(txnId, buffer, pathData);
-    dbgprintf("Write: prepareResp = %d\n", prepareResp);
+    Status prepareResp = callPrepare(txnId, buffer, pathData);
+    dbgprintf("Write: prepareResp = %d\n", prepareResp.error_code());
     
-    if(prepareResp == grpc::StatusCode::OK) { //if prepare() succeeds  
+    if(prepareResp.error_code() == grpc::StatusCode::OK) { //if prepare() succeeds  
       // 5.1 rename 
       for(pair<string,string> temp_file_pair: rename_movs){
         // old name (tmp file), new name (original file)
@@ -387,10 +387,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       kvObj.UpdateStateOnKVStore(KV_STORE, txnId, RPC_INIT);
 
       // 5.4 call commit()
-      int commitResp = callCommit(txnId, pathData);
-      dbgprintf("Write: commitResp = %d\n", commitResp);
+      Status commitResp = callCommit(txnId, pathData);
+      dbgprintf("Write: commitResp = %d\n", commitResp.error_code());
       // 5.5 if commit() succeeds:
-      if (commitResp == grpc::StatusCode::OK)
+      if (commitResp.error_code() == grpc::StatusCode::OK)
       {
         // 7.1 WAL commit
         wal->log_commit(txnId);
@@ -400,7 +400,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         return Status::OK;
       }
         // commit() fails: if backup is unavailable
-      else if (commitResp == grpc::StatusCode::UNAVAILABLE)
+      else if (commitResp.error_code() == grpc::StatusCode::UNAVAILABLE)
       {
         // 6.1 rename 
         for(pair<string,string> temp_file_pair: rename_movs) {
@@ -424,7 +424,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // if prepare() fails
     else{ 
       // 5.1 check status==Unavailable
-      if (prepareResp == grpc::StatusCode::UNAVAILABLE)
+      if (prepareResp.error_code() == grpc::StatusCode::UNAVAILABLE)
       {
         //  6.1 rename tmp to original file
         for(pair<string,string> temp_file_pair: rename_movs) {
@@ -451,7 +451,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
-  int callPrepare(string txnId, string buf, vector<PathData> pathData){
+  Status callPrepare(string txnId, string buf, vector<PathData> pathData){
     dbgprintf("Entering callPrepare\n");
     ClientContext context;
     PrepareRequest request;
@@ -470,10 +470,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     Status status = _stub->Prepare(&context, request, &reply);
     dbgprintf("status code: %d\n", status.error_code());
     dbgprintf("Exiting callPrepare\n");
-    return status.error_code();
+    return status;
   }
 
-  int callCommit(string txnId, vector<PathData> pathData){
+  Status callCommit(string txnId, vector<PathData> pathData){
     dbgprintf("Entering callCommit\n");
     ClientContext context;
     CommitRequest request;
@@ -489,7 +489,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     Status status = _stub->Commit(&context, request, &reply);
     dbgprintf("status code: %d\n", status.error_code());
     dbgprintf("Exiting callCommit\n");
-    return status.error_code();
+    return status;
   }
   
 };

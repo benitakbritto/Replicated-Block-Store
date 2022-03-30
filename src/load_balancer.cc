@@ -3,6 +3,7 @@
 #include <string>
 #include <grpcpp/grpcpp.h>
 #include "blockstorage.grpc.pb.h"
+#include "lb.grpc.pb.h"
 #include "client.h"
 
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
@@ -12,12 +13,9 @@ using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
-using blockstorage::BlockStorage;
-using blockstorage::ReadReply;
-using blockstorage::ReadRequest;
-using blockstorage::WriteReply;
-using blockstorage::WriteRequest;
+using grpc::ServerReaderWriter;
 
+using namespace blockstorage;
 using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
@@ -28,7 +26,7 @@ using namespace std;
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
-class LoadBalancer final : public BlockStorage::Service {
+class BlockStorageService final : public BlockStorage::Service {
 
     private:
         map<string, BlockStorageClient*> bs_clients;
@@ -36,7 +34,7 @@ class LoadBalancer final : public BlockStorage::Service {
         int idx=0;
 
     public:
-        LoadBalancer(){
+        BlockStorageService(){
             RegisterLiveServers();
             initLB();
         }
@@ -83,10 +81,34 @@ class LoadBalancer final : public BlockStorage::Service {
 
 };
 
-void RunServer(int port) {
+class LBNodeCommService final: public LBNodeComm::Service {
 
+    public:
+        Status SendHeartBeat(ServerContext* context, ServerReaderWriter<HeartBeatReply, HeartBeatRequest>* stream) override {
+            HeartBeatRequest request;
+            HeartBeatReply reply;
+
+            while(stream->Read(&request)) {
+                cout << "[INFO]: recv heartbeat from IP:[" << request.ip() <<  "]" << endl;
+
+                if(!stream->Write(reply)) {
+                    cout << "[ERROR]: stream broke" << endl;
+                    break;
+                }
+
+                cout << "[INFO]: sent heartbeat reply" << endl;
+            }
+
+            cout << "[INFO]: stream done" << endl;
+
+            return Status::OK;
+        }
+};
+
+void* RunServerForClient(void* arg) {
+  int port = 50051;
   std::string server_address("0.0.0.0:" + std::to_string(port));
-  LoadBalancer service;
+  BlockStorageService service;
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -98,13 +120,45 @@ void RunServer(int port) {
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  std::cout << "Server for Client listening on " << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
+
+  return NULL;
+}
+
+void* RunServerForNodes(void* arg) {
+  int port = 50052;
+  std::string server_address("0.0.0.0:" + std::to_string(port));
+  LBNodeCommService service;
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server for Nodes listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  server->Wait();
+
+  return NULL;
 }
 
 int main(){
-    RunServer(50053);
+    pthread_t client_server_t, node_server_t;
+  
+    pthread_create(&client_server_t, NULL, RunServerForClient, NULL);
+    pthread_create(&node_server_t, NULL, RunServerForNodes, NULL);
+
+    pthread_join(client_server_t, NULL);
+    pthread_join(node_server_t, NULL);
 }

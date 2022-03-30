@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package blockstorage;
+
+service LBNodeComm {
+    rpc SendHeartBeat(stream HeartBeatRequest) returns (stream HeartBeatReply) {}
+}
+
+enum Identity {
+    PRIMARY = 0;
+    BACKUP = 1;
+}
+
+message HeartBeatRequest {
+    Identity identity = 1;
+    string ip = 2;
+}
+
+message HeartBeatReply {
+    optional string peer_ip = 1;
+}

@@ -12,6 +12,9 @@ get_filename_component(hw_proto_path "${hw_proto}" PATH)
 get_filename_component(comm_proto "../src/protos/servercomm.proto" ABSOLUTE)
 get_filename_component(comm_proto_path "${comm_proto}" PATH)
 
+get_filename_component(lb_proto "../src/protos/lb.proto" ABSOLUTE)
+get_filename_component(lb_proto_path "${lb_proto}" PATH)
+
 # Generated sources
 # Proto file 1
 set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.pb.cc")
@@ -43,6 +46,21 @@ add_custom_command(
         "${comm_proto}"
       DEPENDS "${comm_proto}")
 
+# Proto file 3
+set(lb_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/lb.pb.cc")
+set(lb_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/lb.pb.h")
+set(lb_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/lb.grpc.pb.cc")
+set(lb_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/lb.grpc.pb.h")
+add_custom_command(
+      OUTPUT "${lb_proto_srcs}" "${lb_proto_hdrs}" "${lb_grpc_srcs}" "${lb_grpc_hdrs}"
+      COMMAND ${_PROTOBUF_PROTOC}
+      ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+        -I "${lb_proto_path}"
+        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
+        "${lb_proto}"
+      DEPENDS "${lb_proto}")
+
 # Include generated *.pb.h files
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
@@ -65,6 +83,17 @@ add_library(comm_grpc_proto
   ${comm_proto_srcs}
   ${comm_proto_hdrs})
 target_link_libraries(comm_grpc_proto
+  ${_REFLECTION}
+  ${_GRPC_GRPCPP}
+  ${_PROTOBUF_LIBPROTOBUF})
+
+# Proto file 3
+add_library(lb_grpc_proto
+  ${lb_grpc_srcs}
+  ${lb_grpc_hdrs}
+  ${lb_proto_srcs}
+  ${lb_proto_hdrs})
+target_link_libraries(lb_grpc_proto
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
@@ -95,6 +124,7 @@ foreach(_target
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     hw_grpc_proto
+    lb_grpc_proto
     client_lib
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
@@ -117,6 +147,7 @@ foreach(_target
     cr
     hw_grpc_proto
     comm_grpc_proto
+    lb_grpc_proto
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

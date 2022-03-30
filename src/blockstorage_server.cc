@@ -22,6 +22,7 @@
 #include <grpcpp/health_check_service_interface.h>
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
+#include "lb.grpc.pb.h"
 
 /******************************************************************************
  * NAMESPACE
@@ -699,10 +700,53 @@ class ServiceCommClient {
       }
 };
 
+class LBNodeCommClient {
+
+  private:
+    unique_ptr<LBNodeComm::Stub> stub_;
+  
+  public:
+    LBNodeCommClient(std::shared_ptr<Channel> channel)
+        : stub_(LBNodeComm::NewStub(channel)) {}
+
+    void SendHeartBeat() {
+        ClientContext context;
+
+        std::shared_ptr<ClientReaderWriter<HeartBeatRequest, HeartBeatReply> > stream(
+            stub_->SendHeartBeat(&context));
+
+        HeartBeatRequest request;
+        request.set_ip("0.0.0.0:123");
+        request.set_identity(PRIMARY);
+
+        HeartBeatReply reply;
+
+        while(1) {
+          stream->Write(request);
+          cout << "[INFO]: sent heartbeat" << endl;
+
+          stream->Read(&reply);
+          cout << "[INFO]: recv heartbeat response" << endl;
+          cout << "[INFO]: has peer ? " << reply.has_peer_ip() << endl;
+          cout << "[INFO]: sleeping for 3 sec" << endl;
+
+          sleep(3);
+        }
+    }
+};
+
 void *Test(void* arg) {
   string target_str = "localhost:50052";
   ServiceCommClient serviceCommClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   serviceCommClient.Sync();
+
+  return NULL;
+}
+
+void *TestHB(void* arg) {
+  string target_str = "localhost:50056";
+  LBNodeCommClient lBNodeCommClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+  lBNodeCommClient.SendHeartBeat();
 
   return NULL;
 }
@@ -715,15 +759,17 @@ int main(int argc, char** argv) {
   sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
-  pthread_t test_t;
+  pthread_t test_t, test_hb;
   
   pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
   pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
-  pthread_create(&test_t, NULL, Test, NULL);
+  // pthread_create(&test_t, NULL, Test, NULL);
+  pthread_create(&test_hb, NULL, TestHB, NULL);
 
   pthread_join(block_server_t, NULL);
   pthread_join(comm_server_t, NULL);
-  pthread_join(test_t, NULL);
+  // pthread_join(test_t, NULL);
+  pthread_join(test_hb, NULL);
 
   return 0;
 }

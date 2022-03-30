@@ -103,7 +103,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     while (stream->Read(&request)) {
         SyncRequest_Commands command = request.command();
         #ifdef DEBUG
-          cout << "[INFO]: Recv sync request from [IP:]" << request.ip() << ",[CMD:]" << command << endl;
+          cout << "[INFO]: Recv sync request from [IP:]" << request.ip() << ",[CMD:]" << SyncRequest_Commands_Name(command) << endl;
         #endif
 
         if (SyncRequest_Commands_STOP_WRITE == command) {

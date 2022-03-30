@@ -1,6 +1,9 @@
 #include<errno.h>
 #include "client.h"
 
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
+
 string BlockStorageClient::Read(int address) {
     ReadRequest request;
     request.set_addr(address);
@@ -17,20 +20,16 @@ string BlockStorageClient::Read(int address) {
     }
 }
 
-string BlockStorageClient::Write(int address,string buf){
+int BlockStorageClient::Write(int address,string buf){
     WriteRequest request;
     request.set_addr(address);
     request.set_buffer(buf);
     WriteReply reply;
     ClientContext context;
+    dbgprintf("reached BS write \n");
     Status status = stub_->Write(&context, request, &reply);
 
-    if (status.ok()) {
-        return "Write successful";
-    } else {
-        cout << status.error_code() << ": " << status.error_message() << endl;
-        return "RPC failed";
-    }
+    return status.error_code();
 }
 
     // auto Client::Connect(string target_str){

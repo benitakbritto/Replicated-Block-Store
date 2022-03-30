@@ -44,10 +44,13 @@ using namespace std;
 #define BLOCK_SIZE 4096
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
-// #define WARN
+#define WARN
+#define IS_DEBUG_ON
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
@@ -133,15 +136,15 @@ class ServiceCommImpl final: public ServiceComm::Service {
 // Logic and buffer behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
 
-  string myIP;
-  string otherIP;
+  // string myIP;
+  // string otherIP;
   std::unique_ptr<ServiceComm::Stub> _stub;
   
   public:
-  BlockStorageServiceImpl(string myIP){
-    myIP=myIP;
-    otherIP=SERVER_2;
-    _stub = ServiceComm::NewStub(grpc::CreateChannel("20.109.180.121:50052", grpc::InsecureChannelCredentials()));
+  BlockStorageServiceImpl(string _otherIP){
+    // myIP=myIP;
+    // otherIP=_otherIP;
+    _stub = ServiceComm::NewStub(grpc::CreateChannel(_otherIP, grpc::InsecureChannelCredentials()));
   }
 
   string CreateTransactionId()
@@ -184,6 +187,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
+
+    dbgprintf("reached BS server write  \n");
     int address = 0;
     string buffer = "";
     int start = 0;
@@ -459,11 +464,12 @@ void PrepareStorage() {
 
 }
 
-void *RunBlockStorageServer(void* _port) {
-  int port = *((int*)_port);
+void *RunBlockStorageServer(void* _otherIP) {
   // SERVER_1 = "0.0.0.0:" + std::to_string(port);
-  std::string server_address("0.0.0.0:" + std::to_string(port));
-  BlockStorageServiceImpl service(server_address);
+  char* otherIP = (char*)_otherIP;
+  cout<< otherIP <<" received\n";
+  std::string server_address("0.0.0.0:50051");
+  BlockStorageServiceImpl service(otherIP);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -484,10 +490,9 @@ void *RunBlockStorageServer(void* _port) {
   return NULL;
 }
 
-void *RunCommServer(void* _port) {
-  int port = *((int*)_port);
+void *RunCommServer(void* _otherIP) {
   // SERVER_2 = "20.109.180.121:";
-  string server_address("0.0.0.0:" + to_string(port));
+  string server_address("0.0.0.0:50052");
   ServiceCommImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
@@ -518,9 +523,10 @@ int main(int argc, char** argv) {
   sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
-  int port1 = 50051, port2 = 50052;
-  pthread_create(&block_server_t, NULL, RunBlockStorageServer, (void *)&port1);
-  pthread_create(&comm_server_t, NULL, RunCommServer, (void *)&port2);
+  // int port1 = 50051, port2 = 50052;
+  
+  pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
+  pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
 
   pthread_join(block_server_t, NULL);
   pthread_join(comm_server_t, NULL);

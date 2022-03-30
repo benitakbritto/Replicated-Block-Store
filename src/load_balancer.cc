@@ -21,7 +21,10 @@ using blockstorage::WriteRequest;
 using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
-#define BACKUP_IP "0.0.0.0:50051"
+#define BACKUP_IP "20.109.180.121:50051"
+
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
 class LoadBalancer final : public BlockStorage::Service {
 
@@ -69,12 +72,17 @@ class LoadBalancer final : public BlockStorage::Service {
             }
         }
 
-        // string Write(ServerContext* context, const ReadRequest* request,
-        //           ReadReply* reply) override {
-        //     idx=1-idx; //2 servers
-        //     string resp = bs_clients[idx]->Write(request->addr(), request->buffer());
-        //     return Status::OK;
-        // }
+        Status Write(ServerContext* context, const WriteRequest* request,
+                  WriteReply* reply) override {
+            dbgprintf("reached LB write \n");
+            idx=1-idx; //2 servers
+            int resp = bs_clients[idx]->Write(request->addr(), request->buffer());
+            if (resp==grpc::StatusCode::OK){
+                return Status::OK;
+            } else { 
+                return grpc::Status(grpc::StatusCode::INTERNAL, "error in write");
+            }
+        }
 
 };
 

@@ -44,10 +44,13 @@ using namespace std;
 #define BLOCK_SIZE 4096
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
-// #define WARN
+#define WARN
+#define IS_DEBUG_ON
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
@@ -184,6 +187,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
+
+    dbgprintf("reached BS server write  \n");
     int address = 0;
     string buffer = "";
     int start = 0;

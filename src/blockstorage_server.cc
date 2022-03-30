@@ -480,12 +480,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     ClientContext context;
     CommitRequest request;
     CommitReply reply;
+    FileData* fileData;
 
     request.set_transationid(txnId);
-    
-    auto * file_data = request.add_file_data();
+
     for(PathData pd: pathData){
-      file_data->set_file_name(pd.path);
+      fileData = request.add_file_data();
+      fileData->set_file_name(pd.path);
     }
     
     Status status = _stub->Commit(&context, request, &reply);

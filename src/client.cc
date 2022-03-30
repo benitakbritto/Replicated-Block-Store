@@ -26,7 +26,7 @@ int BlockStorageClient::Write(int address,string buf){
     request.set_buffer(buf);
     WriteReply reply;
     ClientContext context;
-    dbgprintf("reached BS write \n");
+    dbgprintf("reached BS write: trying to write buf = %s \n", buf);
     Status status = stub_->Write(&context, request, &reply);
 
     return status.error_code();

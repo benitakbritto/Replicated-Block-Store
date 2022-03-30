@@ -75,7 +75,9 @@ class LoadBalancer final : public BlockStorage::Service {
         Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
-            idx=1-idx; //2 servers
+            // TODO:Connect to primary
+            idx=1;
+            // dbgprintf( bs_clients[idx].
             int resp = bs_clients[idx]->Write(request->addr(), request->buffer());
             if (resp==grpc::StatusCode::OK){
                 return Status::OK;

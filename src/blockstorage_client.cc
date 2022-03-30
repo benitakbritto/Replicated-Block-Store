@@ -46,6 +46,15 @@ using blockstorage::WriteRequest;
 //   std::unique_ptr<BlockStorage::Stub> stub_;
 // };
 
+string generateStr(){
+  string buffer = "";
+  for (int i = 0; i < 4096; i++)
+  {
+    buffer += "a";
+  }
+  return buffer;
+}
+
 int main(int argc, char** argv) {
   // Instantiate the client. It requires a channel, out of which the actual RPCs
   // are created. This channel models a connection to an endpoint specified by
@@ -76,7 +85,9 @@ int main(int argc, char** argv) {
 
   BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   int address = 0; //TODO: remove
-  auto reply = blockstorageClient.Write(address, "some string");
+  string buffer = generateStr();
+  auto reply = blockstorageClient.Write(address, buffer);
+
   std::cout << "BlockStorage received: " << reply << std::endl;
 
   return 0;

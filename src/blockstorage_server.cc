@@ -204,35 +204,26 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     
     // TODO: 3.2 : create and cp tmp
     for(PathData pd : pathData) {
-      // open orginial file
-      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
-      if (fd == -1) {
-        reply->set_error(errno);
-        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n"); // TODO: set correct status code
-      }
-      
       // get tmp file name
       string temp_path = generateTempPath(pd.path.c_str());
+      string original_path = SERVER_STORAGE_PATH + pd.path;
       // tmp file, orginal file
-      rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
+      rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
-      int bytesWritten = WriteToTempFile(temp_path, pd.path, buffer.c_str()+start, pd.size, pd.offset);
+      int bytesWritten = WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
       if (bytesWritten == -1) {
         #ifdef INFO
           cout << "pwrite failed" << endl;
         #endif
         reply->set_error(errno);
         perror(strerror(errno));
-        close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // TODO: set correct status code
       }
       start += pd.size;
-      close(fd);
-  
       // TODO: save to cache
      // rename(temp_path.c_str(), pd.path.c_str());
     }
-
+    dbgprintf("temp files written\n");
     // TODO: 3.3 Write txn to WAL (start + mv)
     txnId = CreateTransactionId();
     wal->log_prepare(txnId, rename_movs);
@@ -320,13 +311,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
-  int WriteToTempFile(const std::string temp_path, const std::string original_path, std::string buffer, unsigned int size, int offset){
+  int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
     #ifdef IS_DEBUG_ON
 	  	  cout << "START:" << __func__ << endl;
         cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
 	  #endif
 
-    int fd_original = open(original_path.c_str(), O_RDONLY , 0777);
+    int fd_original = open(original_path.c_str(), O_RDONLY);
     if (fd_original == -1)
     {
       cout<<"ERR: server open local failed"<<__func__<<endl;
@@ -343,8 +334,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
 
     // Copy original to temp completely
-    char * original_content;
+    char original_content[4096];
+    memset(original_content, '\0', 4096);
     int read_rc = read(fd_original, original_content, 4096);
+    cout << "[INFO]: bytes read:" << read_rc << endl;
     if (read_rc == -1)
     {
       cout<<"ERR: read local failed in "<<__func__<<endl;
@@ -352,16 +345,21 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       return errno;
     }
 
-    int write_rc = write(fd_tmp, original_content, 4096);
+    // TODO: make only one write call
+    int write_rc = write(fd_tmp, original_content, read_rc);
+    cout << "[INFO]: Copying original contents" << endl;
+    cout << "[INFO]: bytes written:" << write_rc << endl;
     if (write_rc == -1)
     {
       cout<<"ERR: write local failed in "<<__func__<<endl;
       perror(strerror(errno));
       return errno;
     }
-
+    dbgprintf("buffer %s, size: %d, offset %d\n", buffer, size, offset);
     // Do the actual write to tmp
-    int res = pwrite(fd_tmp, buffer.c_str(), size, offset);
+    int res = pwrite(fd_tmp, buffer, size, offset);
+    cout << "[INFO]: Writing user contents" << endl;
+    cout << "[INFO]: bytes written to file:" << res << endl;
     if(res == -1){
       cout<<"ERR: pwrite local failed in "<<__func__<<endl;
       perror(strerror(errno));
@@ -379,11 +377,11 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   string generateTempPath(std::string path){
-    return path + ".tmp";
+    return SERVER_STORAGE_PATH + path + ".tmp";
   }
 
   int callPrepare(string txnId, string buf, vector<PathData> pathData){
-
+    dbgprintf("Entering callPrepare\n");
     ClientContext context;
     PrepareRequest request;
     PrepareReply reply;
@@ -399,12 +397,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Prepare(&context, request, &reply);
-
+    dbgprintf("status code: %d\n", status.error_code());
+    dbgprintf("Exiting callPrepare\n");
     return status.error_code();
   }
 
   int callCommit(string txnId, vector<PathData> pathData){
-
+    dbgprintf("Entering callCommit\n");
     ClientContext context;
     CommitRequest request;
     CommitReply reply;
@@ -417,6 +416,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Commit(&context, request, &reply);
+    dbgprintf("status code: %d\n", status.error_code());
+    dbgprintf("Exiting callCommit\n");
     return status.error_code();
   }
   
@@ -431,9 +432,9 @@ void PrepareStorage() {
   int res = mkdir(SERVER_STORAGE_PATH.c_str(), 0777);
 
   if (res == -1 && errno == EEXIST) {
-    #ifdef WARN
-      cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
-    #endif
+    // #ifdef WARN
+    //   cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
+    // #endif
   }
 
   for(int dirId = 0; dirId < LEVEL_O_COUNT; dirId++) {
@@ -444,9 +445,9 @@ void PrepareStorage() {
     res = mkdir(dir.c_str(), 0777);
 
     if (res == -1 && errno == EEXIST) {
-      #ifdef WARN
-        cout << "[WARN] Dir:" << dir << " already exists." << endl;
-      #endif
+      // #ifdef WARN
+      //   cout << "[WARN] Dir:" << dir << " already exists." << endl;
+      // #endif
     }
 
     for(int fileId = 0; fileId < LEVEL_1_COUNT; fileId++) {
@@ -455,9 +456,9 @@ void PrepareStorage() {
       res = open(file.c_str(), O_CREAT | O_EXCL, 0777);
 
       if (res == -1 && errno == EEXIST) {
-        #ifdef WARN
-          cout << "[WARN] File:" << file << " already exists." << endl;
-        #endif
+        // #ifdef WARN
+        //   cout << "[WARN] File:" << file << " already exists." << endl;
+        // #endif
       }
     }
   }

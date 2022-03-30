@@ -45,14 +45,16 @@ using namespace std;
 #define BLOCK_SIZE 4096
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
-// #define WARN
+#define WARN
+#define IS_DEBUG_ON
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
-string SERVER_STORAGE_PATH = "/home/benitakbritto/CS-739-P3/storage/";
 AddressTranslation atl;
 WAL *wal;
 map<string, int> KV_STORE;
@@ -70,25 +72,149 @@ sem_t global_write_lock;
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
 
+class Helper {
+  public:
+
+  string GenerateTempPath(std::string path){
+    return path + ".tmp";
+  }
+
+  int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
+    dbgprintf("WriteToTempFile: Entering function\n");
+    dbgprintf("WriteToTempFile: temp_path = %s | original_path = %s\n", temp_path.c_str(), original_path.c_str());
+    dbgprintf("WriteToTempFile: buffer %s\n", buffer);
+    dbgprintf("WriteToTempFile: size = %d | offset = %d\n", size, offset);
+
+    int fd_original = open(original_path.c_str(), O_RDONLY);
+    if (fd_original == -1)
+    {
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    int fd_tmp = open(temp_path.c_str(), O_CREAT | O_WRONLY , 0777);
+    if (fd_tmp == -1)
+    {
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // Copy original to temp completely
+    char original_content[4096];
+    memset(original_content, '\0', 4096);
+    int read_rc = read(fd_original, original_content, 4096);
+    dbgprintf("WriteToTempFile: read_rc = %d\n", read_rc);
+    dbgprintf("WriteToTempFile: original_content = %s\n", original_content);
+    if (read_rc == -1)
+    {
+      cout<<"ERR: read local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // TODO: make only one write call
+    int write_rc = write(fd_tmp, original_content, read_rc);
+    dbgprintf("WriteToTempFile: write_rc = %d\n", write_rc);
+    if (write_rc == -1)
+    {
+      cout<<"ERR: write local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    // Do the actual write to tmp
+    int pwrite_rc = pwrite(fd_tmp, buffer, size, offset);
+    dbgprintf("WriteToTempFile: pwrite_rc = %d\n", pwrite_rc);
+    if(pwrite_rc == -1){
+      cout<<"ERR: pwrite local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    fsync(fd_tmp);
+    close(fd_tmp);
+    close(fd_original);
+    dbgprintf("WriteToTempFile: Exiting function\n");
+    return 0;    // TODO: check the error code
+  }
+
+};
+
+/*
+* For Backup
+*/
 class ServiceCommImpl final: public ServiceComm::Service {
+  Helper helper;
+  
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
-    // TODO: 4.1 Create and cp tmp file
-    // TODO: 4.2 Write to WAL
-    // TODO 4.3 Create and cp undo
-    // TODO 4.4 Add id to KV store
-    
+    dbgprintf("Prepare: Entering function\n");
+    string txnId = request->transationid();
+    string buffer = request->buffer();
+    dbgprintf("Prepare: txnId = %s | buffer = %s\n", txnId.c_str(), buffer.c_str());
+
+    vector<pair<string, string>> rename_movs;
+    int start=0;
+
+    for (int i = 0; i < request->file_data_size(); i++)
+    {
+      dbgprintf("Prepare: start %d\n", start);
+      string original_path = request->file_data(i).file_name();
+      dbgprintf("Prepare: original_path %s\n", original_path.c_str());
+      int size = request->file_data(i).size();
+      int offset = request->file_data(i).offset();
+      dbgprintf("Prepare: size = %d | offset = %d\n", size, offset);
+      string temp_path = helper.GenerateTempPath(original_path);
+      dbgprintf("Prepare: temp_path = %s\n", temp_path.c_str());
+      rename_movs.push_back(make_pair(temp_path, original_path));
+      
+      // write to tmp file
+      int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, size, offset);
+      dbgprintf("Prepare: writeResp = %d\n", writeResp);
+      if(writeResp!=0){
+        dbgprintf("Prepare: write to temp failed\n");
+        // reply->set_status(errno);
+        perror(strerror(errno));
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // Check suitable err code
+      }
+      start+=size;
+    }
+
+    // 4.2 Write to WAL
+    wal->log_prepare(txnId, rename_movs);
+
+    // TODO 4.3 Create and cp undo // NOT NEEDED
+
+    // 4.4 Add id to KV store
+    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     reply->set_status(0);
+    dbgprintf("Prepare: Exiting function\n");
     return Status::OK;
   }
 
   Status Commit(ServerContext* context, const CommitRequest* request, CommitReply* reply) override {
-    // TODO: 6.1 Rename 
-    // TODO: 6.2 WAL Commit
-    // TODO: 6.3 Remove from KV store
+    dbgprintf("Commit: Entering function\n");
+    string txnId = request->transationid();
+    dbgprintf("Commit: txnId %s\n", txnId.c_str());
+    // 6.1 Rename 
+    for (int i = 0; i < request->file_data_size(); i++)
+    {
+      string original_path = request->file_data(i).file_name();
+      dbgprintf("Commit: original_path = %s\n", original_path.c_str());
+      string temp_path = helper.GenerateTempPath(original_path);
+      dbgprintf("Commit: temp_path = %s\n", temp_path.c_str());
+      rename(temp_path.c_str(), original_path.c_str()); // rename temp to file
+    }
+    // 6.2 WAL Commit
+    wal->log_commit(txnId);
+    // 6.3 Remove from KV store
+    kvObj.DeleteFromKVStore(KV_STORE, txnId);
+
     reply->set_status(0);
+    dbgprintf("Commit: Exiting function\n");
     return Status::OK;
   }
 
+  // TODO
   Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
     reply->set_status(0);
     return Status::OK;
@@ -152,20 +278,22 @@ class ServiceCommImpl final: public ServiceComm::Service {
 
     return Status::OK;
   }  
+
 };
 
 // Logic and buffer behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
 
-  string myIP;
-  string otherIP;
+  // string myIP;
+  // string otherIP;
   std::unique_ptr<ServiceComm::Stub> _stub;
+  Helper helper;
   
   public:
-  BlockStorageServiceImpl(string myIP){
-    this->myIP = myIP;
-    this->otherIP = "0.0.0.0:50053";
-    this->_stub = ServiceComm::NewStub(grpc::CreateChannel(otherIP, grpc::InsecureChannelCredentials()));
+  BlockStorageServiceImpl(string _otherIP){
+    // myIP=myIP;
+    // otherIP=_otherIP;
+    _stub = ServiceComm::NewStub(grpc::CreateChannel(_otherIP, grpc::InsecureChannelCredentials()));
   }
 
   string CreateTransactionId()
@@ -176,38 +304,45 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
     
+    dbgprintf("Read: Entering function\n");
     int address = request->addr();
+    dbgprintf("Read: address = %d\n", address);
     std::string readContent;
 
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
-      cout<<SERVER_STORAGE_PATH + pd.path<<endl;
-      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_RDONLY);
+      dbgprintf("Read: pd.path = %s\n", pd.path.c_str());
+      int fd = open(pd.path.c_str(), O_RDONLY);
       if (fd == -1){
+         cout << "[ERR] open failed" << endl;
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
 
       char *buf = new char[pd.size];
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
+      dbgprintf("Read: bytesRead = %d\n", bytesRead);
       if (bytesRead == -1){
-        cout << "pread failed" << endl;
+        cout << "[ERR] pread failed" << endl;
         reply->set_error(errno);
         perror(strerror(errno));
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to read bytes\n");
       }
       readContent += buf;
+      dbgprintf("Read: readContent = %s\n", readContent.c_str());
       close(fd);
     }
-    
+
     reply->set_buffer(readContent);
     return Status::OK;
   }
 
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
+
+    dbgprintf("Write: Entering function\n");
     int address = 0;
     string buffer = "";
     int start = 0;
@@ -216,60 +351,59 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     string txnId = "";
 
     address = request->addr();
+    dbgprintf("Write: address = %d\n", address);
     buffer = request->buffer();
+    dbgprintf("Write: buffer = %s\n", buffer.c_str());
     
     // fetch files from ATL
     pathData = atl.GetAllFileNames(address);
     
-    // TODO: 3.2 : create and cp tmp
+    // 3.2 : create and cp tmp
     for(PathData pd : pathData) {
-      // open orginial file
-      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_WRONLY);
-      if (fd == -1) {
-        reply->set_error(errno);
-        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n"); // TODO: set correct status code
-      }
-      
+      dbgprintf("Write: start = %d\n", start);
       // get tmp file name
-      string temp_path = generateTempPath(pd.path.c_str());
+      string temp_path = helper.GenerateTempPath(pd.path.c_str());
+      dbgprintf("Write: temp_path = %s\n", temp_path.c_str());
+      string original_path = pd.path;
+      dbgprintf("Write: original_path = %s\n", original_path.c_str());
       // tmp file, orginal file
-      rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
+      rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
-      int bytesWritten = WriteToTempFile(temp_path, buffer.c_str()+start, pd.size, pd.offset);
-      if (bytesWritten == -1) {
+      int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
+      dbgprintf("Write: writeResp = %d\n", writeResp);
+      if (writeResp != 0) {
         #ifdef INFO
-          cout << "pwrite failed" << endl;
+          cout << "[ERR] WriteToTempFile failed" << endl;
         #endif
         reply->set_error(errno);
         perror(strerror(errno));
-        close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // TODO: set correct status code
       }
       start += pd.size;
-      close(fd);
-  
       // TODO: save to cache
      // rename(temp_path.c_str(), pd.path.c_str());
     }
-
-    // TODO: 3.3 Write txn to WAL (start + mv)
+    //  3.3 Write txn to WAL (start + mv)
     txnId = CreateTransactionId();
+    dbgprintf("Write: txnId = %s\n", txnId.c_str());
     wal->log_prepare(txnId, rename_movs);
     
-    // TODO: 3.4 create and cp to undo file - NOT NEEDED
+    // 3.4 create and cp to undo file - NOT NEEDED
 
-    // TODO: 3.5 Add id to KV store (ordered map)
+    // 3.5 Add id to KV store (ordered map)
     kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     
     // 3.6 call prepare()
-    int prepareResp = callPrepare(txnId, buffer, pathData);
+    Status prepareResp = callPrepare(txnId, buffer, pathData);
+    dbgprintf("Write: prepareResp = %d\n", prepareResp.error_code());
     
-    if(prepareResp == grpc::StatusCode::OK) { //if prepare() succeeds  
+    if(prepareResp.error_code() == grpc::StatusCode::OK) { //if prepare() succeeds  
       // 5.1 rename 
       for(pair<string,string> temp_file_pair: rename_movs){
         // old name (tmp file), new name (original file)
         rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
       }
+      dbgprintf("Write: rename complete\n");
       // 5.2 WAL RPCinit
       wal->log_replication_init(txnId);
       
@@ -277,140 +411,112 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       kvObj.UpdateStateOnKVStore(KV_STORE, txnId, RPC_INIT);
 
       // 5.4 call commit()
-      int commitResp = callCommit(txnId, pathData);
-        // 5.5 if commit() succeeds:
-        if (commitResp == grpc::StatusCode::OK)
-        {
-          // 7.1 WAL commit
-          wal->log_commit(txnId);
-          // 7.2 Remove from KV store
-          kvObj.DeleteFromKVStore(KV_STORE, txnId);
-          // 7.3 Respond success
-          return Status::OK;
-        }
-        // TODO: commit() fails: if backup is unavailable
-        else if (commitResp == grpc::StatusCode::UNAVAILABLE)
-        {
-          // TODO: 6.1 rename 
-          for(pair<string,string> temp_file_pair: rename_movs) {
-            // old name (tmp file), new name (original file)
-            rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
-          }
-            // TODO: 6.2 WAL "pending replication"
-            wal->log_pending_replication(txnId);
-            // TODO: 6.3 Update KV store "Pending on backup"
-            kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
-        }
-        // TODO: if commit() fails
-        else
-        {
-          // Remove from KV store
-          kvObj.DeleteFromKVStore(KV_STORE, txnId);
-          // Return failure
-          return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
-        }       
-    }
-    // TODO: if prepare() fails
-    else{ 
-      // TODO: 5.1 check status==Unavailable
-      if (prepareResp == grpc::StatusCode::UNAVAILABLE)
+      Status commitResp = callCommit(txnId, pathData);
+      dbgprintf("Write: commitResp = %d\n", commitResp.error_code());
+      // 5.5 if commit() succeeds:
+      if (commitResp.error_code() == grpc::StatusCode::OK)
       {
-        // TODO: 6.1 rename 
+        // 7.1 WAL commit
+        wal->log_commit(txnId);
+        // 7.2 Remove from KV store
+        kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // 7.3 Respond success
+        return Status::OK;
+      }
+        // commit() fails: if backup is unavailable
+      else if (commitResp.error_code() == grpc::StatusCode::UNAVAILABLE)
+      {
+        // 6.1 rename 
         for(pair<string,string> temp_file_pair: rename_movs) {
           // old name (tmp file), new name (original file)
           rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
         }
-        // TODO: 6.2 WAL "pending replication"
+        // 6.2 WAL "pending replication"
         wal->log_pending_replication(txnId);
-        // TODO: 6.3 Update KV store "Pending on backup"
+        // 6.3 Update KV store "Pending on backup"
         kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
       }
-      // TODO: 5.1 Else
+      // if commit() fails
       else
       {
-        // TODO: 6.1 WAL Abort
-         wal->log_abort(txnId);
-        // TODO: 6.2 Remove from KV
+        // Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
-        // TODO: 6.3 Send failure status
+        // Return failure
+        return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
+      }       
+    }
+    // if prepare() fails
+    else{ 
+      // 5.1 check status==Unavailable
+      if (prepareResp.error_code() == grpc::StatusCode::UNAVAILABLE)
+      {
+        //  6.1 rename tmp to original file
+        for(pair<string,string> temp_file_pair: rename_movs) {
+          // old name (tmp file), new name (original file)
+          rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
+        }
+        // 6.2 WAL "pending replication"
+        wal->log_pending_replication(txnId);
+        // 6.3 Update KV store "Pending on backup"
+        kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
+      }
+      // 5.1 Else
+      else
+      {
+        //  6.1 WAL Abort
+         wal->log_abort(txnId);
+        // 6.2 Remove from KV
+        kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
     }
+    dbgprintf("Write: Exiting function\n");
     return Status::OK;
   }
 
-  int WriteToTempFile(const std::string temp_path, std::string buffer, unsigned int size, int offset){
-    #ifdef IS_DEBUG_ON
-	  	  cout << "START:" << __func__ << endl;
-        cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
-	  #endif
-    
-    int fd = open(temp_path.c_str(), O_CREAT|O_EXCL, 0777);
-    close(fd);
-    fd = open(temp_path.c_str(), O_RDWR, 0644);
-    if(fd == -1){
-      cout<<"ERR: server open local failed"<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-    cout<<"buffer: "<<buffer<<endl;
-
-    int res = pwrite(fd, buffer.c_str(), size, offset);
-    if(res == -1){
-      cout<<"ERR: pwrite local failed in "<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-    fsync(fd);
-    close(fd);
-
-    #ifdef IS_DEBUG_ON
-	  	  cout << "END:" << __func__ << endl;
-	  #endif
-
-    return 0;    // TODO: check the error code
-  }
-
-  string generateTempPath(std::string path){
-    return path + ".tmp";
-  }
-
-  int callPrepare(string txnId, string buf, vector<PathData> pathData){
-
+  Status callPrepare(string txnId, string buf, vector<PathData> pathData){
+    dbgprintf("callPrepare: Entering function\n");
     ClientContext context;
     PrepareRequest request;
     PrepareReply reply;
+    FileData* fileData;
 
     request.set_transationid(txnId);
     request.set_buffer(buf);
-    FileData* fileData = request.add_file_data();
-
+    
     for(PathData pd: pathData){
+      dbgprintf("callPrepare: Iterating over pathData\n");
+      fileData = request.add_file_data();
       fileData->set_file_name(pd.path);
       fileData->set_size(pd.size); 
       fileData->set_offset(pd.offset);
     }
     
     Status status = _stub->Prepare(&context, request, &reply);
-
-    return status.error_code();
+    dbgprintf("callPrepare: status code = %d\n", status.error_code());
+    dbgprintf("callPrepare: Exiting function\n");
+    return status;
   }
 
-  int callCommit(string txnId, vector<PathData> pathData){
-
+  Status callCommit(string txnId, vector<PathData> pathData){
+    dbgprintf("Entering callCommit\n");
     ClientContext context;
     CommitRequest request;
     CommitReply reply;
+    FileData* fileData;
 
     request.set_transationid(txnId);
-    
-    auto * file_data = request.add_file_data();
+
     for(PathData pd: pathData){
-      file_data->set_file_name(pd.path);
+      fileData = request.add_file_data();
+      fileData->set_file_name(pd.path);
     }
     
     Status status = _stub->Commit(&context, request, &reply);
-    return status.error_code();
+    dbgprintf("status code: %d\n", status.error_code());
+    dbgprintf("Exiting callCommit\n");
+    return status;
   }
   
 };
@@ -421,25 +527,25 @@ void PrepareStorage() {
     cout << "[INFO] Preparing Storage Path" << endl;
   #endif
 
-  int res = mkdir(SERVER_STORAGE_PATH.c_str(), 0777);
+  int res = mkdir(SERVER_STORAGE_PATH, 0777);
 
   if (res == -1 && errno == EEXIST) {
-    #ifdef WARN
-      cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
-    #endif
+    // #ifdef WARN
+    //   cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
+    // #endif
   }
 
   for(int dirId = 0; dirId < LEVEL_O_COUNT; dirId++) {
 
     // check if the directory is already is created
-    string dir = SERVER_STORAGE_PATH + "/" + to_string(dirId);
+    string dir = string(SERVER_STORAGE_PATH) + "/" + to_string(dirId);
 
     res = mkdir(dir.c_str(), 0777);
 
     if (res == -1 && errno == EEXIST) {
-      #ifdef WARN
-        cout << "[WARN] Dir:" << dir << " already exists." << endl;
-      #endif
+      // #ifdef WARN
+      //   cout << "[WARN] Dir:" << dir << " already exists." << endl;
+      // #endif
     }
 
     for(int fileId = 0; fileId < LEVEL_1_COUNT; fileId++) {
@@ -448,60 +554,48 @@ void PrepareStorage() {
       res = open(file.c_str(), O_CREAT | O_EXCL, 0777);
 
       if (res == -1 && errno == EEXIST) {
-        #ifdef WARN
-          cout << "[WARN] File:" << file << " already exists." << endl;
-        #endif
+        // #ifdef WARN
+        //   cout << "[WARN] File:" << file << " already exists." << endl;
+        // #endif
       }
     }
   }
 
 }
 
-void *RunBlockStorageServer(void* _port) {
-  int port = *((int*)_port);
-  SERVER_1 = "0.0.0.0:" + std::to_string(port);
-  std::string server_address(SERVER_1);
-  BlockStorageServiceImpl service(SERVER_1);
+void *RunBlockStorageServer(void* _otherIP) {
+  // SERVER_1 = "0.0.0.0:" + std::to_string(port);
+  char* otherIP = (char*)_otherIP;
+  dbgprintf("RunBlockStorageServer: otherIP = %s\n", otherIP);
+  std::string server_address("0.0.0.0:50051");
+  BlockStorageServiceImpl service(otherIP);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
-  // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-  // Register "service" as the instance through which we'll communicate with
-  // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterService(&service);
-  // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
-  // Wait for the server to shutdown. Note that some other thread must be
-  // responsible for shutting down the server for this call to ever return.
   server->Wait();
 
   return NULL;
 }
 
-void *RunCommServer(void* _port) {
-  int port = *((int*)_port);
-  SERVER_2 = "0.0.0.0:" + std::to_string(port);
-  std::string server_address(SERVER_2);
+void *RunCommServer(void* _otherIP) {
+  // SERVER_2 = "20.109.180.121:";
+  string server_address("0.0.0.0:50052");
   ServiceCommImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
-  // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-  // Register "service" as the instance through which we'll communicate with
-  // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterService(&service);
-  // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "CommServer listening on " << server_address << std::endl;
 
-  // Wait for the server to shutdown. Note that some other thread must be
-  // responsible for shutting down the server for this call to ever return.
   server->Wait();
 
   return NULL;
@@ -617,15 +711,14 @@ int main(int argc, char** argv) {
   PrepareStorage();
   // Write Ahead Logger
   wal = new WAL(SERVER_STORAGE_PATH);
-
   // global write semaphore
   sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
   pthread_t test_t;
-  int port1 = 50051, port2 = 50052;
-  pthread_create(&block_server_t, NULL, RunBlockStorageServer, (void *)&port1);
-  pthread_create(&comm_server_t, NULL, RunCommServer, (void *)&port2);
+  
+  pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
+  pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
   pthread_create(&test_t, NULL, Test, NULL);
 
   pthread_join(block_server_t, NULL);
@@ -634,3 +727,4 @@ int main(int argc, char** argv) {
 
   return 0;
 }
+

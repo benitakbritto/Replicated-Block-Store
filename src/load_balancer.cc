@@ -21,12 +21,17 @@ using blockstorage::WriteRequest;
 using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
-#define BACKUP_IP "0.0.0.0:50051"
+#define BACKUP_IP "20.109.180.121:50051"
+#define PRIMARY "primary"
+#define BACKUP "backup"
+
+#define DEBUG                       1                     
+#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
 class LoadBalancer final : public BlockStorage::Service {
 
     private:
-        vector<BlockStorageClient*> bs_clients;
+        map<string, BlockStorageClient*> bs_clients;
         map<string, string> live_servers;
         int idx=0;
 
@@ -37,17 +42,19 @@ class LoadBalancer final : public BlockStorage::Service {
         }
 
         void RegisterLiveServers(){
-            live_servers.insert(make_pair("primary", PRIMARY_IP));
-            live_servers.insert(make_pair("backup", BACKUP_IP));
+            live_servers[PRIMARY] = PRIMARY_IP;
+            live_servers[BACKUP] = BACKUP_IP;
         }
 
         void initLB(){
-            for (auto const& server : live_servers)
+            dbgprintf("Live servers size = %ld\n", live_servers.size());
+            for (auto itr = live_servers.begin(); itr != live_servers.end(); itr++)
             {   // iterate over live servers and establish a connection with each
-                string target_str = server.second;
-                
-                bs_clients.push_back(new BlockStorageClient (
-                    grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
+                string target_str = itr->second;
+                string key = itr->first;
+                dbgprintf("Pushing to bs_clients target ip = %s: %s\n", key.c_str(), target_str.c_str());
+                bs_clients.insert(make_pair(key,
+                    new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
             }
         }
 
@@ -55,26 +62,24 @@ class LoadBalancer final : public BlockStorage::Service {
             return live_servers;
         }
 
-        Status Read(ServerContext* context, const ReadRequest* request,
-                  ReadReply* reply) override {
-
-            idx=1-idx; //2 servers
-
-            string read_buf = bs_clients[idx]->Read(request->addr());
-            if(reply->error()==0){
-                reply->set_buffer(read_buf);
-                return Status::OK;
-            } else { 
-                return grpc::Status(grpc::StatusCode::INTERNAL, "error in read");
-            }
+        string getServerToRouteTo(){
+            idx=1-idx;
+            if(idx==0) return PRIMARY;
+            return BACKUP;
         }
 
-        // string Write(ServerContext* context, const ReadRequest* request,
-        //           ReadReply* reply) override {
-        //     idx=1-idx; //2 servers
-        //     string resp = bs_clients[idx]->Write(request->addr(), request->buffer());
-        //     return Status::OK;
-        // }
+        Status Read(ServerContext* context, const ReadRequest* request,
+                  ReadReply* reply) override {
+            string key = getServerToRouteTo();
+            dbgprintf("Routing read to %s\n", key.c_str());
+            return bs_clients[key]->Read(request->addr());
+        }
+
+        Status Write(ServerContext* context, const WriteRequest* request,
+                  WriteReply* reply) override {
+            dbgprintf("reached LB write \n");
+            return bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
+        }
 
 };
 
@@ -101,6 +106,5 @@ void RunServer(int port) {
 }
 
 int main(){
-    LoadBalancer lb;
     RunServer(50053);
 }

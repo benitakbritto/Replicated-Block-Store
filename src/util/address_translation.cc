@@ -38,7 +38,7 @@ string AddressTranslation::GetFile(int address)
 */
 string AddressTranslation::GetPath(string dir, string file)
 {
-    return dir + '/' + file;
+    return SERVER_STORAGE_PATH + dir + '/' + file;
 }
 
 /*

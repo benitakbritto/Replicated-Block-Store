@@ -296,9 +296,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
 
-      char *buf = new char[pd.size];
+      char *buf = new char[pd.size+1];
+      memset(buf, '\0', pd.size+1);
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
-      dbgprintf("Read: bytesRead = %d\n", bytesRead);
+      dbgprintf("Read: bytesRead = %d, starting at offset=%d, size=%d\n", bytesRead, pd.offset, pd.size);
       if (bytesRead == -1){
         cout << "[ERR] pread failed" << endl;
         reply->set_error(errno);
@@ -306,7 +307,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to read bytes\n");
       }
-      readContent += buf;
+      dbgprintf("Read: pread buf = %s\n", buf);
+      readContent += string(buf);
       dbgprintf("Read: readContent = %s\n", readContent.c_str());
       close(fd);
     }

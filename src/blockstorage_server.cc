@@ -80,7 +80,7 @@ class Helper {
 
   int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
     dbgprintf("WriteToTempFile: Entering function\n");
-    dbgprintf("WriteToTempFile: temp_path = %s | WriteToTempFile = %s\n", temp_path.c_str(), original_path.c_str());
+    dbgprintf("WriteToTempFile: temp_path = %s | original_path = %s\n", temp_path.c_str(), original_path.c_str());
     dbgprintf("WriteToTempFile: buffer %s\n", buffer);
     dbgprintf("WriteToTempFile: size = %d | offset = %d\n", size, offset);
 
@@ -452,24 +452,26 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   Status callPrepare(string txnId, string buf, vector<PathData> pathData){
-    dbgprintf("Entering callPrepare\n");
+    dbgprintf("callPrepare: Entering function\n");
     ClientContext context;
     PrepareRequest request;
     PrepareReply reply;
+    FileData* fileData;
 
     request.set_transationid(txnId);
     request.set_buffer(buf);
-    FileData* fileData = request.add_file_data();
-
+    
     for(PathData pd: pathData){
+      dbgprintf("callPrepare: Iterating over pathData\n");
+      fileData = request.add_file_data();
       fileData->set_file_name(pd.path);
       fileData->set_size(pd.size); 
       fileData->set_offset(pd.offset);
     }
     
     Status status = _stub->Prepare(&context, request, &reply);
-    dbgprintf("status code: %d\n", status.error_code());
-    dbgprintf("Exiting callPrepare\n");
+    dbgprintf("callPrepare: status code = %d\n", status.error_code());
+    dbgprintf("callPrepare: Exiting function\n");
     return status;
   }
 

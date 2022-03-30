@@ -42,16 +42,17 @@ class LoadBalancer final : public BlockStorage::Service {
         }
 
         void RegisterLiveServers(){
-            live_servers.insert(make_pair("primary", PRIMARY_IP));
-            live_servers.insert(make_pair("backup", BACKUP_IP));
+            live_servers[PRIMARY] = PRIMARY_IP;
+            live_servers[BACKUP] = BACKUP_IP;
         }
 
         void initLB(){
-            for (auto const& server : live_servers)
+            dbgprintf("Live servers size = %ld\n", live_servers.size());
+            for (auto itr = live_servers.begin(); itr != live_servers.end(); itr++)
             {   // iterate over live servers and establish a connection with each
-                string target_str = server.second;
-                string key = server.first;
-                dbgprintf("Pushing to bs_clients target ip: %s: %s\n", key.c_str(), target_str.c_str());
+                string target_str = itr->second;
+                string key = itr->first;
+                dbgprintf("Pushing to bs_clients target ip = %s: %s\n", key.c_str(), target_str.c_str());
                 bs_clients.insert(make_pair(key,
                     new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
             }
@@ -69,10 +70,8 @@ class LoadBalancer final : public BlockStorage::Service {
 
         Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
-
             string key = getServerToRouteTo();
             dbgprintf("Routing read to %s\n", key.c_str());
-
             return bs_clients[key]->Read(request->addr());
         }
 
@@ -80,11 +79,6 @@ class LoadBalancer final : public BlockStorage::Service {
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
             return bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
-            // if (resp==grpc::StatusCode::OK){
-            //     return Status::OK;
-            // } else { 
-            //     return grpc::Status(grpc::StatusCode::INTERNAL, "error in write");
-            // }
         }
 
 };
@@ -112,6 +106,5 @@ void RunServer(int port) {
 }
 
 int main(){
-    LoadBalancer lb;
     RunServer(50053);
 }

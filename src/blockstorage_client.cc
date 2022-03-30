@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
   }
 
   BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-  int address = 0; //TODO: remove
+  int address = 4097; //TODO: remove
   string buffer = generateStr();
   auto status = blockstorageClient.Write(address, buffer);
 

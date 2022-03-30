@@ -72,21 +72,135 @@ sem_t global_write_lock;
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
 
+class Helper {
+  public:
+
+  string GenerateTempPath(std::string path){
+    return path + ".tmp";
+  }
+
+  int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
+    #ifdef IS_DEBUG_ON
+	  	  cout << "START:" << __func__ << endl;
+        cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
+	  #endif
+
+    int fd_original = open(original_path.c_str(), O_RDONLY);
+    if (fd_original == -1)
+    {
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    int fd_tmp = open(temp_path.c_str(), O_CREAT | O_WRONLY , 0777);
+    if (fd_tmp == -1)
+    {
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // Copy original to temp completely
+    char original_content[4096];
+    memset(original_content, '\0', 4096);
+    int read_rc = read(fd_original, original_content, 4096);
+    cout << "[INFO]: bytes read:" << read_rc << endl;
+    if (read_rc == -1)
+    {
+      cout<<"ERR: read local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // TODO: make only one write call
+    int write_rc = write(fd_tmp, original_content, read_rc);
+    cout << "[INFO]: Copying original contents" << endl;
+    cout << "[INFO]: bytes written:" << write_rc << endl;
+    if (write_rc == -1)
+    {
+      cout<<"ERR: write local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    dbgprintf("buffer %s, size: %d, offset %d\n", buffer, size, offset);
+    // Do the actual write to tmp
+    int res = pwrite(fd_tmp, buffer, size, offset);
+    cout << "[INFO]: Writing user contents" << endl;
+    cout << "[INFO]: bytes written to file:" << res << endl;
+    if(res == -1){
+      cout<<"ERR: pwrite local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+    fsync(fd_tmp);
+    close(fd_tmp);
+    close(fd_original);
+
+    #ifdef IS_DEBUG_ON
+	  	  cout << "END:" << __func__ << endl;
+	  #endif
+
+    return 0;    // TODO: check the error code
+  }
+
+};
+
+
 class ServiceCommImpl final: public ServiceComm::Service {
+  Helper helper;
+  
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
-    // TODO: 4.1 Create and cp tmp file
-    // TODO: 4.2 Write to WAL
-    // TODO 4.3 Create and cp undo
-    // TODO 4.4 Add id to KV store
-    
+    string txnId = request->transationid();
+    string buffer = request->buffer();
+    vector<pair<string, string>> rename_movs;
+    int start=0;
+
+    for (int i = 0; i < request->file_data_size(); i++)
+    {
+      string original_path = request->file_data(i).file_name();
+      int size = request->file_data(i).size();
+      int offset = request->file_data(i).offset();
+      string temp_path = helper.GenerateTempPath(original_path);
+      rename_movs.push_back(make_pair(temp_path, original_path));
+      
+      // write to tmp file
+      int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, size, offset);
+      if(writeResp!=0){
+        #ifdef INFO
+          cout << "write to temp failed in "<< __func__ << endl;
+        #endif
+        reply->set_status(errno);
+        perror(strerror(errno));
+        return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // Check suitable err code
+      }
+      start+=size;
+    }
+
+    // 4.2 Write to WAL
+
+    wal->log_prepare(txnId, rename_movs);
+    // TODO 4.3 Create and cp undo // NOT NEEDED
+    // 4.4 Add id to KV store
+    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
     reply->set_status(0);
     return Status::OK;
   }
 
   Status Commit(ServerContext* context, const CommitRequest* request, CommitReply* reply) override {
-    // TODO: 6.1 Rename 
-    // TODO: 6.2 WAL Commit
-    // TODO: 6.3 Remove from KV store
+    string txnId = request->transationid();
+    // 6.1 Rename 
+    for (int i = 0; i < request->file_data_size(); i++)
+    {
+      string original_path = request->file_data(i).file_name();
+      string temp_path = helper.GenerateTempPath(original_path);
+      rename(temp_path.c_str(), original_path.c_str()); // rename temp to file
+    }
+    // 6.2 WAL Commit
+    wal->log_commit(txnId);
+    // 6.3 Remove from KV store
+    kvObj.DeleteFromKVStore(KV_STORE, txnId);
+
     reply->set_status(0);
     return Status::OK;
   }
@@ -131,6 +245,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
 
     return Status::OK;
   }  
+
 };
 
 // Logic and buffer behind the server's behavior.
@@ -139,6 +254,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   // string myIP;
   // string otherIP;
   std::unique_ptr<ServiceComm::Stub> _stub;
+  Helper helper;
   
   public:
   BlockStorageServiceImpl(string _otherIP){
@@ -161,8 +277,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     std::vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
-      cout<<SERVER_STORAGE_PATH + pd.path<<endl;
-      int fd = open((SERVER_STORAGE_PATH + pd.path).c_str(), O_RDONLY);
+      cout<<pd.path<<endl;
+      int fd = open(pd.path.c_str(), O_RDONLY);
       if (fd == -1){
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
@@ -205,13 +321,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // TODO: 3.2 : create and cp tmp
     for(PathData pd : pathData) {
       // get tmp file name
-      string temp_path = generateTempPath(pd.path.c_str());
-      string original_path = SERVER_STORAGE_PATH + pd.path;
+      string temp_path = helper.GenerateTempPath(pd.path.c_str());
+      string original_path = pd.path;
       // tmp file, orginal file
       rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
-      int bytesWritten = WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
-      if (bytesWritten == -1) {
+      int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
+      if (writeResp != 0) {
         #ifdef INFO
           cout << "pwrite failed" << endl;
         #endif
@@ -311,75 +427,6 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
-  int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
-    #ifdef IS_DEBUG_ON
-	  	  cout << "START:" << __func__ << endl;
-        cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
-	  #endif
-
-    int fd_original = open(original_path.c_str(), O_RDONLY);
-    if (fd_original == -1)
-    {
-      cout<<"ERR: server open local failed"<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-
-    int fd_tmp = open(temp_path.c_str(), O_CREAT | O_WRONLY , 0777);
-    if (fd_tmp == -1)
-    {
-      cout<<"ERR: server open local failed"<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-
-    // Copy original to temp completely
-    char original_content[4096];
-    memset(original_content, '\0', 4096);
-    int read_rc = read(fd_original, original_content, 4096);
-    cout << "[INFO]: bytes read:" << read_rc << endl;
-    if (read_rc == -1)
-    {
-      cout<<"ERR: read local failed in "<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-
-    // TODO: make only one write call
-    int write_rc = write(fd_tmp, original_content, read_rc);
-    cout << "[INFO]: Copying original contents" << endl;
-    cout << "[INFO]: bytes written:" << write_rc << endl;
-    if (write_rc == -1)
-    {
-      cout<<"ERR: write local failed in "<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-    dbgprintf("buffer %s, size: %d, offset %d\n", buffer, size, offset);
-    // Do the actual write to tmp
-    int res = pwrite(fd_tmp, buffer, size, offset);
-    cout << "[INFO]: Writing user contents" << endl;
-    cout << "[INFO]: bytes written to file:" << res << endl;
-    if(res == -1){
-      cout<<"ERR: pwrite local failed in "<<__func__<<endl;
-      perror(strerror(errno));
-      return errno;
-    }
-    fsync(fd_tmp);
-    close(fd_tmp);
-    close(fd_original);
-
-    #ifdef IS_DEBUG_ON
-	  	  cout << "END:" << __func__ << endl;
-	  #endif
-
-    return 0;    // TODO: check the error code
-  }
-
-  string generateTempPath(std::string path){
-    return SERVER_STORAGE_PATH + path + ".tmp";
-  }
-
   int callPrepare(string txnId, string buf, vector<PathData> pathData){
     dbgprintf("Entering callPrepare\n");
     ClientContext context;
@@ -420,6 +467,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     dbgprintf("Exiting callCommit\n");
     return status.error_code();
   }
+
+  
   
 };
 
@@ -534,3 +583,4 @@ int main(int argc, char** argv) {
 
   return 0;
 }
+

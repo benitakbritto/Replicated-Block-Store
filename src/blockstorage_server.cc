@@ -211,7 +211,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       // tmp file, orginal file
       rename_movs.push_back(make_pair(temp_path, pd.path.c_str()));
       // write to tmp file
-      int bytesWritten = WriteToTempFile(temp_path, buffer.c_str()+start, pd.size, pd.offset);
+      int bytesWritten = WriteToTempFile(temp_path, pd.path, buffer.c_str()+start, pd.size, pd.offset);
       if (bytesWritten == -1) {
         #ifdef INFO
           cout << "pwrite failed" << endl;
@@ -315,30 +315,56 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
-  int WriteToTempFile(const std::string temp_path, std::string buffer, unsigned int size, int offset){
+  int WriteToTempFile(const std::string temp_path, const std::string original_path, std::string buffer, unsigned int size, int offset){
     #ifdef IS_DEBUG_ON
 	  	  cout << "START:" << __func__ << endl;
         cout<<"server to write buffer size "<< size <<" to file:"<<temp_path<<endl;
 	  #endif
-    
-    int fd = open(temp_path.c_str(), O_CREAT|O_EXCL, 0777);
-    close(fd);
-    fd = open(temp_path.c_str(), O_RDWR, 0644);
-    if(fd == -1){
+
+    int fd_original = open(original_path.c_str(), O_RDONLY , 0777);
+    if (fd_original == -1)
+    {
       cout<<"ERR: server open local failed"<<__func__<<endl;
       perror(strerror(errno));
       return errno;
     }
-    cout<<"buffer: "<<buffer<<endl;
 
-    int res = pwrite(fd, buffer.c_str(), size, offset);
+    int fd_tmp = open(temp_path.c_str(), O_CREAT | O_WRONLY , 0777);
+    if (fd_tmp == -1)
+    {
+      cout<<"ERR: server open local failed"<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // Copy original to temp completely
+    char * original_content;
+    int read_rc = read(fd_original, original_content, 4096);
+    if (read_rc == -1)
+    {
+      cout<<"ERR: read local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    int write_rc = write(fd_tmp, original_content, 4096);
+    if (write_rc == -1)
+    {
+      cout<<"ERR: write local failed in "<<__func__<<endl;
+      perror(strerror(errno));
+      return errno;
+    }
+
+    // Do the actual write to tmp
+    int res = pwrite(fd_tmp, buffer.c_str(), size, offset);
     if(res == -1){
       cout<<"ERR: pwrite local failed in "<<__func__<<endl;
       perror(strerror(errno));
       return errno;
     }
-    fsync(fd);
-    close(fd);
+    fsync(fd_tmp);
+    close(fd_tmp);
+    close(fd_original);
 
     #ifdef IS_DEBUG_ON
 	  	  cout << "END:" << __func__ << endl;

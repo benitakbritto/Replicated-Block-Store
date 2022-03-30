@@ -22,6 +22,8 @@ using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
 #define BACKUP_IP "20.109.180.121:50051"
+#define PRIMARY "primary"
+#define BACKUP "backup"
 
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
@@ -29,7 +31,7 @@ using namespace std;
 class LoadBalancer final : public BlockStorage::Service {
 
     private:
-        vector<BlockStorageClient*> bs_clients;
+        map<string, BlockStorageClient*> bs_clients;
         map<string, string> live_servers;
         int idx=0;
 
@@ -48,9 +50,10 @@ class LoadBalancer final : public BlockStorage::Service {
             for (auto const& server : live_servers)
             {   // iterate over live servers and establish a connection with each
                 string target_str = server.second;
-                
-                bs_clients.push_back(new BlockStorageClient (
-                    grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
+                string key = server.first;
+                dbgprintf("Pushing to bs_clients target ip: %s: %s\n", key.c_str(), target_str.c_str());
+                bs_clients.insert(make_pair(key,
+                    new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
             }
         }
 
@@ -58,12 +61,19 @@ class LoadBalancer final : public BlockStorage::Service {
             return live_servers;
         }
 
+        string getServerToRouteTo(){
+            idx=1-idx;
+            if(idx==0) return PRIMARY;
+            return BACKUP;
+        }
+
         Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
 
-            idx=1-idx; //2 servers
+            string key = getServerToRouteTo();
+            dbgprintf("Routing read to %s\n", key.c_str());
 
-            string read_buf = bs_clients[idx]->Read(request->addr());
+            string read_buf = bs_clients[key]->Read(request->addr());
             if(reply->error()==0){
                 reply->set_buffer(read_buf);
                 return Status::OK;
@@ -75,10 +85,7 @@ class LoadBalancer final : public BlockStorage::Service {
         Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
-            // TODO:Connect to primary
-            idx=1;
-            // dbgprintf( bs_clients[idx].
-            int resp = bs_clients[idx]->Write(request->addr(), request->buffer());
+            int resp = bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
             if (resp==grpc::StatusCode::OK){
                 return Status::OK;
             } else { 

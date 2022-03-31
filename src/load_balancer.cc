@@ -20,29 +20,34 @@ using namespace std;
 
 #define PRIMARY_IP "0.0.0.0:50051"
 #define BACKUP_IP "20.109.180.121:50051"
-#define PRIMARY "primary"
-#define BACKUP "backup"
+#define PRIMARY "PRIMARY"
+#define BACKUP "BACKUP"
 
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
+map<string, string> live_servers;
+
 class BlockStorageService final : public BlockStorage::Service {
 
     private:
-        map<string, BlockStorageClient*> bs_clients;
-        map<string, string> live_servers;
+        // for round-robin
         int idx=0;
 
+        map<string, BlockStorageClient*> bs_clients;
+        map<string, string>* nodes;
+
     public:
-        BlockStorageService(){
-            RegisterLiveServers();
-            initLB();
+        BlockStorageService(map<string, string> &servers){
+            // RegisterLiveServers();
+            nodes = &servers;
+            // initLB();
         }
 
-        void RegisterLiveServers(){
-            live_servers[PRIMARY] = PRIMARY_IP;
-            live_servers[BACKUP] = BACKUP_IP;
-        }
+        // void RegisterLiveServers(){
+        //     (*nodes)[PRIMARY] = PRIMARY_IP;
+        //     (*nodes)[BACKUP] = BACKUP_IP;
+        // }
 
         void initLB(){
             dbgprintf("Live servers size = %ld\n", live_servers.size());
@@ -56,9 +61,9 @@ class BlockStorageService final : public BlockStorage::Service {
             }
         }
 
-        map<string, string> GetLiveServers(){
-            return live_servers;
-        }
+        // map<string, string> GetLiveServers(){
+        //     return live_servers;
+        // }
 
         string getServerToRouteTo(){
             idx=1-idx;
@@ -82,24 +87,67 @@ class BlockStorageService final : public BlockStorage::Service {
 };
 
 class LBNodeCommService final: public LBNodeComm::Service {
+    private:
+        map<string, string>* nodes;
+
+        void register_identity(string identity, string ip) {
+            (*nodes)[identity] = ip;
+        }
+
+        string get_peer_ip(string identity) {
+            if (identity.compare(PRIMARY) == 0) {
+                return (*nodes)[BACKUP];
+            } else {
+                return (*nodes)[PRIMARY];
+            }
+        }
+
+        void erase_identity(string identity) {
+            nodes->erase(identity);
+        }
+
+        void print_identity() {
+            cout << PRIMARY << ":" << get_peer_ip(PRIMARY) << endl;
+            cout << BACKUP << ":" << get_peer_ip(BACKUP) << endl;
+        }
 
     public:
+        LBNodeCommService(map<string, string> &servers) {
+            nodes = &servers;
+        }
+
         Status SendHeartBeat(ServerContext* context, ServerReaderWriter<HeartBeatReply, HeartBeatRequest>* stream) override {
             HeartBeatRequest request;
             HeartBeatReply reply;
 
-            while(stream->Read(&request)) {
-                cout << "[INFO]: recv heartbeat from IP:[" << request.ip() <<  "]" << endl;
+            string identity;
+            // TODO: create client on the fly
 
-                if(!stream->Write(reply)) {
-                    cout << "[ERROR]: stream broke" << endl;
+            while(1) {
+                if(!stream->Read(&request)) {
                     break;
                 }
+                cout << "[INFO]: recv heartbeat from IP:[" << request.ip() <<  "]" << endl;
 
+                identity = Identity_Name(request.identity());
+
+                register_identity(identity, request.ip());
+
+                string peer_ip = get_peer_ip(identity);
+
+                if (!peer_ip.empty()) {
+                    reply.set_peer_ip(peer_ip);
+                }
+
+                if(!stream->Write(reply)) {
+                    break;
+                }
                 cout << "[INFO]: sent heartbeat reply" << endl;
             }
 
-            cout << "[INFO]: stream done" << endl;
+            cout << "[ERROR]: stream broke" << endl;
+
+            erase_identity(identity);
 
             return Status::OK;
         }
@@ -108,7 +156,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
 void* RunServerForClient(void* arg) {
   int port = 50051;
   std::string server_address("0.0.0.0:" + std::to_string(port));
-  BlockStorageService service;
+  BlockStorageService service(live_servers);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -130,9 +178,9 @@ void* RunServerForClient(void* arg) {
 }
 
 void* RunServerForNodes(void* arg) {
-  int port = 50052;
+  int port = 50056;
   std::string server_address("0.0.0.0:" + std::to_string(port));
-  LBNodeCommService service;
+  LBNodeCommService service(live_servers);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();

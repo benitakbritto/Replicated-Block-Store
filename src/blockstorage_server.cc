@@ -22,6 +22,7 @@
 #include <grpcpp/health_check_service_interface.h>
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
+#include "util/crash_recovery.h"
 
 /******************************************************************************
  * NAMESPACE
@@ -216,11 +217,26 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
-  // TODO
-  Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
-    reply->set_status(0);
+  Status GetPendingReplicationTransactions(ServerContext* context, 
+                                          const GetPendingReplicationTransactionsRequest* request, 
+                                          GetPendingReplicationTransactionsReply* reply) override {
+    dbgprintf("GetPendingReplicationTransactions: Entering function\n");
+    
+    for (auto itr = KV_STORE.begin(); itr != KV_STORE.end(); itr++)
+    {
+      if (itr->second.state == PENDING_REPLICATION)
+      {
+        dbgprintf("GetPendingReplicationTransactions: transaction id = %s\n", (itr->first).c_str());
+        auto data = reply->add_txn();
+        data->set_transaction_id(itr->first);
+        dbgprintf("GetPendingReplicationTransactions: transaction id = %s\n", (data->transaction_id()).c_str());
+      }
+    }
+
+    dbgprintf("GetPendingReplicationTransactions: Exiting function\n");
     return Status::OK;
   }
+
 
   Status Sync(ServerContext* context, ServerReaderWriter<SyncReply, SyncRequest>* stream) override{
     SyncRequest request;
@@ -288,10 +304,11 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   // string myIP;
   // string otherIP;
-  std::unique_ptr<ServiceComm::Stub> _stub;
   Helper helper;
   
   public:
+  std::unique_ptr<ServiceComm::Stub> _stub;
+
   BlockStorageServiceImpl(string _otherIP){
     // myIP=myIP;
     // otherIP=_otherIP;
@@ -570,12 +587,12 @@ void PrepareStorage() {
 }
 
 void *RunBlockStorageServer(void* _otherIP) {
+  // Init Service
   // SERVER_1 = "0.0.0.0:" + std::to_string(port);
   char* otherIP = (char*)_otherIP;
   dbgprintf("RunBlockStorageServer: otherIP = %s\n", otherIP);
   std::string server_address("0.0.0.0:50051");
   BlockStorageServiceImpl service(otherIP);
-
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
@@ -584,6 +601,11 @@ void *RunBlockStorageServer(void* _otherIP) {
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
+  // Start Recovery
+  CrashRecovery cr;
+  cr.Recover(service._stub);
+
+  // Start Service
   server->Wait();
 
   return NULL;

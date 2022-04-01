@@ -40,15 +40,23 @@ string GetUndoFileName(string file_name);
 //     return 0;
 // }
 
-int CrashRecovery::Recover()
+int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
 {
     dbgprintf("Recover: Entering function\n");
+    // Parse log
     LoadData();
 
+    // Get pending writes
+    ClientContext context;
+    GetPendingReplicationTransactionsRequest request;
+    GetPendingReplicationTransactionsReply reply;
+    Status status = _stub->GetPendingReplicationTransactions(&context, request, &reply);
+    dbgprintf("Recover: GetPendingReplicationTransactions status code = %d\n", status.error_code());
+
     // TODO: 
-    // Get pending writes from other server and 
-    // apply it if the txn id on the current server's log
-    // is not commit
+    // Update Log
+    // Apply pending writes
+    // Recover from other states
     
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {

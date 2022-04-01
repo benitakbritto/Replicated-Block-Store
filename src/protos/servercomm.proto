@@ -6,7 +6,7 @@ service ServiceComm
 {
     rpc Prepare(PrepareRequest) returns (PrepareReply) {}
     rpc Commit(CommitRequest) returns (CommitReply) {}
-    rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusReply) {}
+    rpc GetPendingReplicationTransactions(GetPendingReplicationTransactionsRequest) returns (GetPendingReplicationTransactionsReply) {}
     rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
 }
 
@@ -15,6 +15,11 @@ message FileData
     string file_name = 1;
     optional uint32 offset = 2;
     optional uint32 size = 3;
+}
+
+message TransactionId
+{
+    string transaction_id = 1;
 }
 
 message PrepareRequest
@@ -40,14 +45,11 @@ message CommitReply
     uint32 status = 1;
 }
 
-message GetTransactionStatusRequest
-{
-    string transationId = 1;
-}
+message GetPendingReplicationTransactionsRequest {}
 
-message GetTransactionStatusReply
+message GetPendingReplicationTransactionsReply
 {
-    uint32 status = 1;
+    repeated TransactionId txn = 1;
 }
 
 message SyncRequest {

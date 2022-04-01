@@ -5,11 +5,20 @@
 #include <vector>
 #include <string>
 #include "state.h"
+#include <grpcpp/grpcpp.h>
+#include "blockstorage.grpc.pb.h"
+#include "servercomm.grpc.pb.h"
 
 /******************************************************************************
  * NAMESPACE
  *****************************************************************************/
 using namespace std;
+using namespace blockstorage;
+using grpc::ClientContext;
+using grpc::Status;
+using blockstorage::ServiceComm;
+using blockstorage::GetPendingReplicationTransactionsRequest;
+using blockstorage::GetPendingReplicationTransactionsReply;
 
 /******************************************************************************
  * GLOBALS
@@ -48,7 +57,7 @@ class CrashRecovery
 {
 public:
     CrashRecovery() {}
-    int Recover();
+    int Recover(unique_ptr<ServiceComm::Stub> &_stub);
 };
 
 #endif

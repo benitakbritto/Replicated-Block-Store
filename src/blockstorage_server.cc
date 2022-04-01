@@ -76,7 +76,7 @@ int writes_in_flight = 0;
 string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
 
-string self_addr;
+string self_addr_lb;
 
 class Helper {
   public:
@@ -573,34 +573,34 @@ void *RunBlockStorageServer(void* _otherIP) {
   // SERVER_1 = "0.0.0.0:" + std::to_string(port);
   char* otherIP = (char*)_otherIP;
   dbgprintf("RunBlockStorageServer: otherIP = %s\n", otherIP);
-  std::string server_address("0.0.0.0:50051");
+  // std::string server_address("0.0.0.0:50051");
   BlockStorageServiceImpl service(otherIP);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
-  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(self_addr_lb, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "BlockStorage Server listening on " << server_address << std::endl;
+  std::cout << "BlockStorage Server listening on " << self_addr_lb << std::endl;
 
   server->Wait();
 
   return NULL;
 }
 
-void *RunCommServer(void* _otherIP) {
+void *RunCommServer(void* _self_addr_peer) {
   // SERVER_2 = "20.109.180.121:";
-  string server_address("0.0.0.0:50052");
+  string self_addr_peer((char*)_self_addr_peer);
   ServiceCommImpl service;
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
-  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(self_addr_peer, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "CommServer listening on " << server_address << std::endl;
+  std::cout << "CommServer listening on " << self_addr_peer << std::endl;
 
   server->Wait();
 
@@ -770,18 +770,18 @@ void *TestHB(void* _identity) {
   }
 
   string target_str = "localhost:50056";
-  LBNodeCommClient lBNodeCommClient(target_str, identity_enum, self_addr);
+  LBNodeCommClient lBNodeCommClient(target_str, identity_enum, self_addr_lb);
   lBNodeCommClient.SendHeartBeat();
 
   return NULL;
 }
 
-// ./blockstorage_server [identity] [self_addr] [peer_addr]
-// e.g ./blockstorage_server PRIMARY 0.0.0.0:50051 0.0.0.0:50052
-// e.g ./blockstorage_server BACKUP 0.0.0.0:50052 0.0.0.0:50051
+// ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr]
+// e.g ./blockstorage_server PRIMARY 0.0.0.0:40051 0.0.0.0:60052 0.0.0.0:60053
+// e.g ./blockstorage_server BACKUP 0.0.0.0:40052 0.0.0.0:60053 0.0.0.0:60052
 
 int main(int argc, char** argv) {
-  self_addr = string(argv[2]);
+  self_addr_lb = string(argv[2]);
 
   PrepareStorage();
   // Write Ahead Logger
@@ -789,16 +789,16 @@ int main(int argc, char** argv) {
   // global write semaphore
   sem_init(&global_write_lock, 0, 1);
 
-  // pthread_t block_server_t, comm_server_t;
+  pthread_t block_server_t, comm_server_t;
   pthread_t test_t, test_hb;
   
-  // pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[3]);
-  // pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
+  pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[4]);
+  pthread_create(&comm_server_t, NULL, RunCommServer, argv[3]);
   // pthread_create(&test_t, NULL, Test, NULL);
   pthread_create(&test_hb, NULL, TestHB, argv[1]);
 
-  // pthread_join(block_server_t, NULL);
-  // pthread_join(comm_server_t, NULL);
+  pthread_join(block_server_t, NULL);
+  pthread_join(comm_server_t, NULL);
   // pthread_join(test_t, NULL);
   pthread_join(test_hb, NULL);
 

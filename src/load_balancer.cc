@@ -18,10 +18,8 @@ using grpc::ServerReaderWriter;
 using namespace blockstorage;
 using namespace std;
 
-#define PRIMARY_IP "0.0.0.0:50051"
-#define BACKUP_IP "20.109.180.121:50051"
-#define PRIMARY "PRIMARY"
-#define BACKUP "BACKUP"
+#define PRIMARY_STR "PRIMARY"
+#define BACKUP_STR "BACKUP"
 
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
@@ -38,39 +36,23 @@ class BlockStorageService final : public BlockStorage::Service {
         map<string, string>* nodes;
         map<string, BlockStorageClient*>* bs_clients;
 
-    public:
-        BlockStorageService(map<string, string> &servers, map<string, BlockStorageClient*>& clients){
-            // RegisterLiveServers();
-            nodes = &servers;
-            bs_clients = &clients;
-            // initLB();
+        bool is_primary_registered() {
+            return nodes->find(PRIMARY_STR) == nodes->end();
         }
 
-        // void RegisterLiveServers(){
-        //     (*nodes)[PRIMARY] = PRIMARY_IP;
-        //     (*nodes)[BACKUP] = BACKUP_IP;
-        // }
-
-        // void initLB(){
-        //     dbgprintf("Live servers size = %ld\n", live_servers.size());
-        //     for (auto itr = live_servers.begin(); itr != live_servers.end(); itr++)
-        //     {   // iterate over live servers and establish a connection with each
-        //         string target_str = itr->second;
-        //         string key = itr->first;
-        //         dbgprintf("Pushing to bs_clients target ip = %s: %s\n", key.c_str(), target_str.c_str());
-        //         bs_clients->insert(make_pair(key,
-        //             new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
-        //     }
-        // }
-
-        // map<string, string> GetLiveServers(){
-        //     return live_servers;
-        // }
+    public:
+        BlockStorageService(map<string, string> &servers, map<string, BlockStorageClient*>& clients){
+            nodes = &servers;
+            bs_clients = &clients;
+        }
 
         string getServerToRouteTo(){
-            idx=1-idx;
-            if(idx==0) return PRIMARY;
-            return BACKUP;
+            idx = 1 - idx;
+            if(idx == 0 && is_primary_registered()) {
+                return PRIMARY_STR;
+            }
+
+            return BACKUP_STR;
         }
 
         Status Read(ServerContext* context, const ReadRequest* request,
@@ -83,7 +65,7 @@ class BlockStorageService final : public BlockStorage::Service {
         Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
-            return (*bs_clients)[PRIMARY]->Write(request->addr(), request->buffer());
+            return (*bs_clients)[PRIMARY_STR]->Write(request->addr(), request->buffer());
         }
 
 };
@@ -109,16 +91,16 @@ class LBNodeCommService final: public LBNodeComm::Service {
         }
 
         string get_peer_ip(string identity) {
-            if (identity.compare(PRIMARY) == 0) {
-                return (*nodes)[BACKUP];
+            if (identity.compare(PRIMARY_STR) == 0) {
+                return (*nodes)[BACKUP_STR];
             } else {
-                return (*nodes)[PRIMARY];
+                return (*nodes)[PRIMARY_STR];
             }
         }
 
         void print_identity() {
-            cout << PRIMARY << ":" << get_peer_ip(PRIMARY) << endl;
-            cout << BACKUP << ":" << get_peer_ip(BACKUP) << endl;
+            cout << PRIMARY_STR << ":" << get_peer_ip(PRIMARY_STR) << endl;
+            cout << BACKUP_STR << ":" << get_peer_ip(BACKUP_STR) << endl;
         }
 
     public:
@@ -176,7 +158,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
 
             cout << "[ERROR]: stream broke" << endl;
             erase_node(identity);
-            
+
             return Status::OK;
         }
 };

@@ -10,7 +10,7 @@ using namespace std;
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
-unordered_map<string, Data> logMap;
+map<string, Data> logMap;
 
 /******************************************************************************
  * HELPER FUNCTIONS
@@ -22,14 +22,12 @@ void ExecuteTransactionRpcInitRecovery(string id);
 void ExecuteTransactionCommitRecovery(string id);
 void ExecuteTransactionPendingReplicationRecovery(string id);
 void DeleteFiles(vector<string> file_names);
-//void GetStateFromOtherServer();
-//void ForceCommitOnOtherServer();
 bool IsState(string val);
 int GetStateOfCurrentServer(string val);
 int GetOperation(string op);
 void PrintLogData(string id);
 string GetUndoFileName(string file_name);
-
+void WriteData(string file_path, string content, int size, int offset);
 
 // Tester
 // int main()
@@ -46,18 +44,52 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
     // Parse log
     LoadData();
 
+    // TODO: Test - getting status as unavailable
     // Get pending writes
     ClientContext context;
-    GetPendingReplicationTransactionsRequest request;
-    GetPendingReplicationTransactionsReply reply;
-    Status status = _stub->GetPendingReplicationTransactions(&context, request, &reply);
+    GetPendingReplicationTransactionsRequest request_gprt;
+    GetPendingReplicationTransactionsReply reply_gprt;
+    Status status = _stub->GetPendingReplicationTransactions(&context, request_gprt, &reply_gprt);
     dbgprintf("Recover: GetPendingReplicationTransactions status code = %d\n", status.error_code());
 
-    // TODO: 
-    // Update Log
+    // TODO: Test
+    // Go through RPC result and prune the list
+    ForcePendingWritesRequest request_fpw;
+    for (int i = 0; i < reply_gprt.txn_size(); i++)
+    {
+        string txnId = reply_gprt.txn(i).transaction_id();
+        string("Recover: txnId = %s\n", txnId.c_str());
+
+        // Transaction was not commited on this machine
+        if ((logMap.count(txnId) != 0 
+                && logMap[txnId].state != COMMIT)
+            || 
+            (logMap.count(txnId) == 0)) 
+        {
+            auto data = request_fpw.add_txn();
+            data->set_transaction_id(txnId);
+            // Set the state to commit
+            // as we will be forcing the write in the next step
+            if (logMap.count(txnId) != 0) logMap[txnId].state = COMMIT;
+        }
+    }
+
+    // TODO: Test
     // Apply pending writes
-    // Recover from other states
-    
+    ForcePendingWritesReply reply_fpw;
+    std::unique_ptr<ClientReader<ForcePendingWritesReply>> reader(
+                            _stub->ForcePendingWrites(&context, request_fpw));
+    while (reader->Read(&reply_fpw))
+    {
+        string transaction_id = reply_fpw.transaction_id();
+        string file_name = reply_fpw.file_name();
+        string content = reply_fpw.content();
+        int offset = reply_fpw.offset();
+        int size = reply_fpw.size();
+        WriteData(file_name, content, size, offset);
+    }
+
+    // Recover from other states    
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {
         dbgprintf("Recover: Transation id = %s\n", it->first.c_str());
@@ -82,6 +114,10 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
                 return -1;
         }
     }
+
+    // TODECIDE
+    // Truncate log?
+    // Delete logMap ?
 
     dbgprintf("Recover: Exiting function\n");
     return 0;
@@ -309,5 +345,28 @@ void DeleteFiles(vector<string> file_names)
             dbgprintf("DeleteFiles: Failed to delete %s\n", file_name.c_str());
         }
     }
-    
+}
+
+// TODO: Test
+// TODECIDE if we should write to temp and rename instead
+void WriteData(string file_path, string content, int size, int offset)
+{
+    dbgprintf("WriteData: Entering function\n");
+    int fd = open(file_path.c_str(), O_WRONLY);
+    if (fd == -1)
+    {
+      dbgprintf("WriteData: failed to open file\n");
+      return;
+    }
+
+    int pwrite_rc = pwrite(fd, content.c_str(), size, offset);
+    if (pwrite_rc == -1)
+    {
+      dbgprintf("WriteData: pread failed\n");
+      close(fd);
+      return;
+    }
+    dbgprintf("WriteData: Exiting function\n");
+    close(fd);
+    return;
 }

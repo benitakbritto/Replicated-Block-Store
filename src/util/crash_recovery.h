@@ -8,6 +8,7 @@
 #include <grpcpp/grpcpp.h>
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
+#include <fcntl.h>
 
 /******************************************************************************
  * NAMESPACE
@@ -19,6 +20,9 @@ using grpc::Status;
 using blockstorage::ServiceComm;
 using blockstorage::GetPendingReplicationTransactionsRequest;
 using blockstorage::GetPendingReplicationTransactionsReply;
+using blockstorage::ForcePendingWritesRequest;
+using blockstorage::ForcePendingWritesReply;
+using grpc::ClientReader;
 
 /******************************************************************************
  * GLOBALS

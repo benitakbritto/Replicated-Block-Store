@@ -52,20 +52,20 @@ int main(int argc, char** argv) {
 
   BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   
-  // Test: Write(4097) - Unaligned write
-  // int address = 4097; //TODO: remove
-  // string buffer = generateStr();
-  // auto status = blockstorageClient.Write(address, buffer);
-  // cout << "BlockStorage received errorcode: " << status.error_code() << std::endl;
+  // Test: Write
+  int address = 0;
+  string buffer = generateStr();
+  auto status = blockstorageClient.Write(address, buffer);
+  cout << "BlockStorage received errorcode: " << status.error_code() << std::endl;
 
   // Test: Read(0) - Aligned read
-  int address = 1;
-  string content = "";
-  ReadRequest request;
-  ReadReply reply;
-  request.set_addr(address);
-  auto status = blockstorageClient.Read(request, &reply, address);
-  cout << "BlockStorage received errorcode: " << status.error_code() << endl;
+  // int address = 1;
+  // string content = "";
+  // ReadRequest request;
+  // ReadReply reply;
+  // request.set_addr(address);
+  // auto status = blockstorageClient.Read(request, &reply, address);
+  // cout << "BlockStorage received errorcode: " << status.error_code() << endl;
 
 
   return 0;

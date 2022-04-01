@@ -24,6 +24,8 @@ using namespace std;
 struct TransactionData
 {
     vector<string> original_files;
+    vector<int> sizes;
+    vector<int> offsets;
     int state;
 };
 
@@ -34,10 +36,19 @@ class KVStore
 public:
     KVStore() {}
 
-    void AddToKVStore(map<string, TxnData> &KV_STORE, string txn_id, vector<string> &original_files);
+    void AddToKVStore(map<string, TxnData> &KV_STORE, 
+                    string txn_id, 
+                    vector<string> &original_files,
+                    vector<int> &sizes,
+                    vector<int> &offsets);
     int GetStateFromKVStore(map<string, TxnData> &KV_STORE, string txn_id);
     void UpdateStateOnKVStore(map<string, TxnData> &KV_STORE, string txn_id, int state);
     void DeleteFromKVStore(map<string, TxnData> &KV_STORE, string txn_id);
+    void GetTransactionDataFromKVStore(map<string, TxnData> &KV_STORE, 
+                                            string txn_id,
+                                            vector<string> &original_files,
+                                            vector<int> &sizes,
+                                            vector<int> &offsets);
 };
 
 #endif

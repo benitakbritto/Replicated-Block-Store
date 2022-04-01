@@ -139,6 +139,32 @@ class Helper {
     return 0;    // TODO: check the error code
   }
 
+  // TODO: Test
+  string GetData(string file_path, int size, int offset)
+  {
+    dbgprintf("GetData: Entering function\n");
+    int fd =  open(file_path.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+      dbgprintf("GetData: failed to open file\n");
+      return string("");
+    }
+
+    char content[size];
+    memset(content, '\0', size);
+    int pread_rc = pread(fd, content, size, offset);
+    if (pread_rc == -1)
+    {
+      dbgprintf("GetData: pread failed\n");
+      close(fd);
+      return string("");
+    }
+
+    dbgprintf("GetData: content = %s\n", string(content).c_str());
+    dbgprintf("GetData: Exiting function\n");
+    close(fd);
+    return string(content);
+  }
 };
 
 /*
@@ -155,6 +181,8 @@ class ServiceCommImpl final: public ServiceComm::Service {
 
     vector<pair<string, string>> rename_movs;
     vector<string> original_files;
+    vector<int> sizes;
+    vector<int> offsets;
     int start=0;
 
     for (int i = 0; i < request->file_data_size(); i++)
@@ -164,7 +192,9 @@ class ServiceCommImpl final: public ServiceComm::Service {
       original_files.push_back(original_path);
       dbgprintf("Prepare: original_path %s\n", original_path.c_str());
       int size = request->file_data(i).size();
+      sizes.push_back(size);
       int offset = request->file_data(i).offset();
+      offsets.push_back(offset);
       dbgprintf("Prepare: size = %d | offset = %d\n", size, offset);
       string temp_path = helper.GenerateTempPath(original_path);
       dbgprintf("Prepare: temp_path = %s\n", temp_path.c_str());
@@ -188,7 +218,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     // TODO 4.3 Create and cp undo // NOT NEEDED
 
     // 4.4 Add id to KV store
-    kvObj.AddToKVStore(KV_STORE, txnId, original_files);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files, sizes, offsets);
     reply->set_status(0);
     dbgprintf("Prepare: Exiting function\n");
     return Status::OK;
@@ -217,6 +247,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
+  // TODO: Test
   Status GetPendingReplicationTransactions(ServerContext* context, 
                                           const GetPendingReplicationTransactionsRequest* request, 
                                           GetPendingReplicationTransactionsReply* reply) override {
@@ -237,6 +268,38 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
+  // TODO: Test
+  Status ForcePendingWrites(ServerContext* context, const ForcePendingWritesRequest* request, ServerWriter<ForcePendingWritesReply>*writer) override {
+    dbgprintf("ForcePendingWrites: Entering function\n");
+    ForcePendingWritesReply reply;
+    for (int i = 0; i < request->txn_size(); i++)
+    {
+      string pending_write_transaction_id = request->txn(i).transaction_id();
+      vector<string> original_files;
+      vector<int> sizes;
+      vector<int> offsets;
+      kvObj.GetTransactionDataFromKVStore(KV_STORE, 
+                                          pending_write_transaction_id,
+                                          original_files,
+                                          sizes,
+                                          offsets);
+      int len = original_files.size();
+      for (int j = 0; j < len; j++)
+      {
+        string content = helper.GetData(original_files[j], sizes[j], offsets[j]);
+        reply.set_transaction_id(pending_write_transaction_id);
+        reply.set_file_name(original_files[j]);
+        reply.set_content(content);
+        reply.set_size(sizes[j]);
+        reply.set_offset(offsets[j]);
+        writer->Write(reply);
+      }
+      return Status::OK;
+    }
+
+    dbgprintf("ForcePendingWrites: Exiting function\n");
+    return Status::OK;
+  }
 
   Status Sync(ServerContext* context, ServerReaderWriter<SyncReply, SyncRequest>* stream) override{
     SyncRequest request;
@@ -360,6 +423,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
+  // TODO: Decide if we should send success if prepare() / commit() fails on backup
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
 
@@ -370,6 +434,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     vector<PathData> pathData;
     vector<pair<string, string>> rename_movs;
     vector<string> original_files;
+    vector<int> sizes;
+    vector<int> offsets;
     string txnId = "";
 
     address = request->addr();
@@ -388,7 +454,9 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       dbgprintf("Write: temp_path = %s\n", temp_path.c_str());
       string original_path = pd.path;
       original_files.push_back(original_path);
-      dbgprintf("Write: original_path = %s\n", original_path.c_str());
+      sizes.push_back(pd.size);
+      offsets.push_back(pd.offset);
+      dbgprintf("Write: original_path = %s | size = %d | offset = %d \n", original_path.c_str(), pd.size, pd.offset);
       // tmp file, orginal file
       rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
@@ -414,7 +482,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // 3.4 create and cp to undo file - NOT NEEDED
 
     // 3.5 Add id to KV store (ordered map)
-    kvObj.AddToKVStore(KV_STORE, txnId, original_files);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files, sizes, offsets);
     
     // 3.6 call prepare()
     Status prepareResp = callPrepare(txnId, buffer, pathData);
@@ -602,6 +670,7 @@ void *RunBlockStorageServer(void* _otherIP) {
   std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
   // Start Recovery
+  dbgprintf("Recover: Starting\n");
   CrashRecovery cr;
   cr.Recover(service._stub);
 

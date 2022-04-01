@@ -2,16 +2,29 @@
 
 // Set the state to START
 // Add the list of original file names
-void SetTxnData(TxnData * data, vector<string> &original_files)
+void SetTxnData(TxnData * data, 
+                vector<string> &original_files,
+                vector<int> &sizes,
+                vector<int> &offsets)
 {
     data->original_files.insert(data->original_files.begin(), 
                                 original_files.begin(),
                                 original_files.end());
+    data->sizes.insert(data->sizes.begin(),
+                    sizes.begin(),
+                    sizes.end());
+    data->offsets.insert(data->offsets.begin(),
+                    offsets.begin(),
+                    offsets.end());
     data->state = START;
 }
 
 
-void KVStore::AddToKVStore(map<string, TxnData> &KV_STORE, string txn_id, vector<string> &original_files)
+void KVStore::AddToKVStore(map<string, TxnData> &KV_STORE, 
+                            string txn_id, 
+                            vector<string> &original_files,
+                            vector<int> &sizes,
+                            vector<int> &offsets)
 {
     dbgprintf("AddToKVStore: Entering function\n");
     if (KV_STORE.count(txn_id) != 0)
@@ -21,7 +34,7 @@ void KVStore::AddToKVStore(map<string, TxnData> &KV_STORE, string txn_id, vector
     else
     {
         TxnData data;
-        SetTxnData(&data, original_files);
+        SetTxnData(&data, original_files, sizes, offsets);
         KV_STORE[txn_id] = data;
     }
     dbgprintf("AddToKVStore: Exiting function\n");
@@ -67,6 +80,26 @@ void KVStore::DeleteFromKVStore(map<string, TxnData> &KV_STORE, string txn_id)
     }
     dbgprintf("DeleteFromKVStore: Exiting function\n");
 }
+
+void KVStore::GetTransactionDataFromKVStore(map<string, TxnData> &KV_STORE, 
+                                            string txn_id,
+                                            vector<string> &original_files,
+                                            vector<int> &sizes,
+                                            vector<int> &offsets)
+{
+    dbgprintf("GetTransactionDataFromKVStore: Entering function\n");
+    original_files.insert(original_files.begin(), 
+                        KV_STORE[txn_id].original_files.begin(),
+                        KV_STORE[txn_id].original_files.end());
+    sizes.insert(sizes.begin(), 
+                        KV_STORE[txn_id].sizes.begin(),
+                        KV_STORE[txn_id].sizes.end());
+    offsets.insert(offsets.begin(), 
+                        KV_STORE[txn_id].offsets.begin(),
+                        KV_STORE[txn_id].offsets.end());
+    dbgprintf("GetTransactionDataFromKVStore: Exiting function\n");
+}
+
 
 
 // Tester

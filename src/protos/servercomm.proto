@@ -7,6 +7,7 @@ service ServiceComm
     rpc Prepare(PrepareRequest) returns (PrepareReply) {}
     rpc Commit(CommitRequest) returns (CommitReply) {}
     rpc GetPendingReplicationTransactions(GetPendingReplicationTransactionsRequest) returns (GetPendingReplicationTransactionsReply) {}
+    rpc ForcePendingWrites(ForcePendingWritesRequest) returns (stream ForcePendingWritesReply) {}
     rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
 }
 
@@ -50,6 +51,20 @@ message GetPendingReplicationTransactionsRequest {}
 message GetPendingReplicationTransactionsReply
 {
     repeated TransactionId txn = 1;
+}
+
+message ForcePendingWritesRequest
+{
+    repeated TransactionId txn = 1;
+}
+
+message ForcePendingWritesReply
+{
+    string transaction_id = 1;
+    string file_name = 2;
+    string content = 3;
+    uint32 offset = 4;
+    uint32 size = 5;
 }
 
 message SyncRequest {

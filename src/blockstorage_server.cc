@@ -76,7 +76,7 @@ int writes_in_flight = 0;
 string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
 
-string self_addr("0.0.0.0:40042");
+string self_addr;
 
 class Helper {
   public:
@@ -710,11 +710,13 @@ class LBNodeCommClient {
   private:
     unique_ptr<LBNodeComm::Stub> stub_;
     Identity identity;
+    string self_addr;
   
   public:
-    LBNodeCommClient(string target_str, Identity _identity) {
+    LBNodeCommClient(string target_str, Identity _identity, string _self_addr) {
       identity = _identity;
       stub_ = LBNodeComm::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+      self_addr = _self_addr;
     }
 
     void SendHeartBeat() {
@@ -756,28 +758,44 @@ void *Test(void* arg) {
   return NULL;
 }
 
-void *TestHB(void* arg) {
+void *TestHB(void* _identity) {
+  string identity_str((char*)_identity);
+
+  cout << "[INFO]: starting as:" << identity_str << endl;
+
+  Identity identity_enum = PRIMARY;
+
+  if (identity_str.compare(BACKUP_STR) == 0) {
+    identity_enum = BACKUP;
+  }
+
   string target_str = "localhost:50056";
-  LBNodeCommClient lBNodeCommClient(target_str, BACKUP);
+  LBNodeCommClient lBNodeCommClient(target_str, identity_enum, self_addr);
   lBNodeCommClient.SendHeartBeat();
 
   return NULL;
 }
 
+// ./blockstorage_server [identity] [self_addr] [peer_addr]
+// e.g ./blockstorage_server PRIMARY 0.0.0.0:50051 0.0.0.0:50052
+// e.g ./blockstorage_server BACKUP 0.0.0.0:50052 0.0.0.0:50051
+
 int main(int argc, char** argv) {
+  self_addr = string(argv[2]);
+
   PrepareStorage();
   // Write Ahead Logger
   wal = new WAL(SERVER_STORAGE_PATH);
   // global write semaphore
   sem_init(&global_write_lock, 0, 1);
 
-  pthread_t block_server_t, comm_server_t;
+  // pthread_t block_server_t, comm_server_t;
   pthread_t test_t, test_hb;
   
-  // pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
+  // pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[3]);
   // pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
   // pthread_create(&test_t, NULL, Test, NULL);
-  pthread_create(&test_hb, NULL, TestHB, NULL);
+  pthread_create(&test_hb, NULL, TestHB, argv[1]);
 
   // pthread_join(block_server_t, NULL);
   // pthread_join(comm_server_t, NULL);

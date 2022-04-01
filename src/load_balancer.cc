@@ -133,6 +133,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
 
             string prev_identity;
             string identity;
+            bool first_time = true;
             // TODO: create client on the fly
 
             while(1) {
@@ -144,7 +145,14 @@ class LBNodeCommService final: public LBNodeComm::Service {
                 identity = Identity_Name(request.identity());
 
                 if (identity.compare(prev_identity) != 0) {
-                    cout << "[INFO]: registering first time" << endl;
+                    if (first_time) {
+                        cout << "[INFO]: registering first time" << endl;
+                        first_time = false;
+                    } else {
+                        cout << "[WARN]: Failover" << endl;
+                        erase_node(identity);
+                    }
+                    
                     register_node(identity, request.ip());
                 } else {
                     cout << "[INFO]: not registering again" << endl;
@@ -167,9 +175,8 @@ class LBNodeCommService final: public LBNodeComm::Service {
             }
 
             cout << "[ERROR]: stream broke" << endl;
-
             erase_node(identity);
-
+            
             return Status::OK;
         }
 };

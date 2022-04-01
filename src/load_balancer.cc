@@ -27,20 +27,22 @@ using namespace std;
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
 map<string, string> live_servers;
+map<string, BlockStorageClient*> bs_clients;
 
 class BlockStorageService final : public BlockStorage::Service {
 
     private:
         // for round-robin
-        int idx=0;
-
-        map<string, BlockStorageClient*> bs_clients;
+        int idx = 
+        0;
         map<string, string>* nodes;
+        map<string, BlockStorageClient*>* bs_clients;
 
     public:
-        BlockStorageService(map<string, string> &servers){
+        BlockStorageService(map<string, string> &servers, map<string, BlockStorageClient*>& clients){
             // RegisterLiveServers();
             nodes = &servers;
+            bs_clients = &clients;
             // initLB();
         }
 
@@ -49,17 +51,17 @@ class BlockStorageService final : public BlockStorage::Service {
         //     (*nodes)[BACKUP] = BACKUP_IP;
         // }
 
-        void initLB(){
-            dbgprintf("Live servers size = %ld\n", live_servers.size());
-            for (auto itr = live_servers.begin(); itr != live_servers.end(); itr++)
-            {   // iterate over live servers and establish a connection with each
-                string target_str = itr->second;
-                string key = itr->first;
-                dbgprintf("Pushing to bs_clients target ip = %s: %s\n", key.c_str(), target_str.c_str());
-                bs_clients.insert(make_pair(key,
-                    new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
-            }
-        }
+        // void initLB(){
+        //     dbgprintf("Live servers size = %ld\n", live_servers.size());
+        //     for (auto itr = live_servers.begin(); itr != live_servers.end(); itr++)
+        //     {   // iterate over live servers and establish a connection with each
+        //         string target_str = itr->second;
+        //         string key = itr->first;
+        //         dbgprintf("Pushing to bs_clients target ip = %s: %s\n", key.c_str(), target_str.c_str());
+        //         bs_clients->insert(make_pair(key,
+        //             new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
+        //     }
+        // }
 
         // map<string, string> GetLiveServers(){
         //     return live_servers;
@@ -75,13 +77,13 @@ class BlockStorageService final : public BlockStorage::Service {
                   ReadReply* reply) override {
             string key = getServerToRouteTo();
             dbgprintf("Routing read to %s\n", key.c_str());
-            return bs_clients[key]->Read(request->addr());
+            return (*bs_clients)[key]->Read(request->addr());
         }
 
         Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
             dbgprintf("reached LB write \n");
-            return bs_clients[PRIMARY]->Write(request->addr(), request->buffer());
+            return (*bs_clients)[PRIMARY]->Write(request->addr(), request->buffer());
         }
 
 };
@@ -89,9 +91,21 @@ class BlockStorageService final : public BlockStorage::Service {
 class LBNodeCommService final: public LBNodeComm::Service {
     private:
         map<string, string>* nodes;
+        map<string, BlockStorageClient*>* bs_clients;
 
-        void register_identity(string identity, string ip) {
-            (*nodes)[identity] = ip;
+        void register_node(string identity, string target_str) {
+            (*nodes)[identity] = target_str;
+
+            bs_clients->insert(make_pair(
+                identity,
+                new BlockStorageClient (grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()))));
+        }
+
+        void erase_node(string identity) {
+            if (identity.empty()) return;
+
+            nodes->erase(identity);
+            bs_clients->erase(identity);
         }
 
         string get_peer_ip(string identity) {
@@ -102,24 +116,22 @@ class LBNodeCommService final: public LBNodeComm::Service {
             }
         }
 
-        void erase_identity(string identity) {
-            nodes->erase(identity);
-        }
-
         void print_identity() {
             cout << PRIMARY << ":" << get_peer_ip(PRIMARY) << endl;
             cout << BACKUP << ":" << get_peer_ip(BACKUP) << endl;
         }
 
     public:
-        LBNodeCommService(map<string, string> &servers) {
+        LBNodeCommService(map<string, string> &servers, map<string, BlockStorageClient*> &clients) {
             nodes = &servers;
+            bs_clients = &clients;
         }
 
         Status SendHeartBeat(ServerContext* context, ServerReaderWriter<HeartBeatReply, HeartBeatRequest>* stream) override {
             HeartBeatRequest request;
             HeartBeatReply reply;
 
+            string prev_identity;
             string identity;
             // TODO: create client on the fly
 
@@ -131,11 +143,20 @@ class LBNodeCommService final: public LBNodeComm::Service {
 
                 identity = Identity_Name(request.identity());
 
-                register_identity(identity, request.ip());
+                if (identity.compare(prev_identity) != 0) {
+                    cout << "[INFO]: registering first time" << endl;
+                    register_node(identity, request.ip());
+                } else {
+                    cout << "[INFO]: not registering again" << endl;
+                }
 
+                prev_identity = identity;
+                
                 string peer_ip = get_peer_ip(identity);
 
-                if (!peer_ip.empty()) {
+                if (peer_ip.empty()) {
+                    reply.clear_peer_ip();
+                } else {
                     reply.set_peer_ip(peer_ip);
                 }
 
@@ -147,7 +168,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
 
             cout << "[ERROR]: stream broke" << endl;
 
-            erase_identity(identity);
+            erase_node(identity);
 
             return Status::OK;
         }
@@ -156,7 +177,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
 void* RunServerForClient(void* arg) {
   int port = 50051;
   std::string server_address("0.0.0.0:" + std::to_string(port));
-  BlockStorageService service(live_servers);
+  BlockStorageService service(live_servers, bs_clients);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
@@ -180,7 +201,7 @@ void* RunServerForClient(void* arg) {
 void* RunServerForNodes(void* arg) {
   int port = 50056;
   std::string server_address("0.0.0.0:" + std::to_string(port));
-  LBNodeCommService service(live_servers);
+  LBNodeCommService service(live_servers, bs_clients);
 
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();

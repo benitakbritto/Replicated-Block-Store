@@ -73,6 +73,11 @@ sem_t global_write_lock;
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
 
+string PRIMARY_STR("PRIMARY");
+string BACKUP_STR("BACKUP");
+
+string self_addr("0.0.0.0:40042");
+
 class Helper {
   public:
 
@@ -704,10 +709,13 @@ class LBNodeCommClient {
 
   private:
     unique_ptr<LBNodeComm::Stub> stub_;
+    Identity identity;
   
   public:
-    LBNodeCommClient(std::shared_ptr<Channel> channel)
-        : stub_(LBNodeComm::NewStub(channel)) {}
+    LBNodeCommClient(string target_str, Identity _identity) {
+      identity = _identity;
+      stub_ = LBNodeComm::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    }
 
     void SendHeartBeat() {
         ClientContext context;
@@ -715,19 +723,24 @@ class LBNodeCommClient {
         std::shared_ptr<ClientReaderWriter<HeartBeatRequest, HeartBeatReply> > stream(
             stub_->SendHeartBeat(&context));
 
-        HeartBeatRequest request;
-        request.set_ip("0.0.0.0:123");
-        request.set_identity(PRIMARY);
-
         HeartBeatReply reply;
+        HeartBeatRequest request;
+        request.set_ip(self_addr);
 
         while(1) {
+          request.set_identity(identity);
           stream->Write(request);
           cout << "[INFO]: sent heartbeat" << endl;
 
           stream->Read(&reply);
           cout << "[INFO]: recv heartbeat response" << endl;
           cout << "[INFO]: has peer ? " << reply.has_peer_ip() << endl;
+
+          if (identity == BACKUP && !reply.has_peer_ip()) {
+            cout << "FAILOVER" << endl;
+            identity = PRIMARY;
+          }
+
           cout << "[INFO]: sleeping for 3 sec" << endl;
 
           sleep(3);
@@ -745,7 +758,7 @@ void *Test(void* arg) {
 
 void *TestHB(void* arg) {
   string target_str = "localhost:50056";
-  LBNodeCommClient lBNodeCommClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+  LBNodeCommClient lBNodeCommClient(target_str, BACKUP);
   lBNodeCommClient.SendHeartBeat();
 
   return NULL;
@@ -761,13 +774,13 @@ int main(int argc, char** argv) {
   pthread_t block_server_t, comm_server_t;
   pthread_t test_t, test_hb;
   
-  pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
-  pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
+  // pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[1]);
+  // pthread_create(&comm_server_t, NULL, RunCommServer, NULL);
   // pthread_create(&test_t, NULL, Test, NULL);
   pthread_create(&test_hb, NULL, TestHB, NULL);
 
-  pthread_join(block_server_t, NULL);
-  pthread_join(comm_server_t, NULL);
+  // pthread_join(block_server_t, NULL);
+  // pthread_join(comm_server_t, NULL);
   // pthread_join(test_t, NULL);
   pthread_join(test_hb, NULL);
 

@@ -669,7 +669,7 @@ void *RunBlockStorageServer(void* _otherIP) {
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "BlockStorage Server listening on " << server_address << std::endl;
 
-  // Start Recovery
+  // TODO: Uncomment later -- Start Recovery
   dbgprintf("Recover: Starting\n");
   CrashRecovery cr;
   cr.Recover(service._stub);

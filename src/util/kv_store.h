@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "state.h"
+#include <semaphore.h>
 
 /******************************************************************************
  * MACROS
@@ -28,13 +29,15 @@ struct TransactionData
     vector<int> offsets;
     int state;
 };
-
 typedef TransactionData TxnData;
+extern sem_t global_kv_store_lock;
 
 class KVStore
 {
 public:
-    KVStore() {}
+    KVStore() {
+        sem_init(&global_kv_store_lock, 0, 1);
+    }
 
     void AddToKVStore(map<string, TxnData> &KV_STORE, 
                     string txn_id, 

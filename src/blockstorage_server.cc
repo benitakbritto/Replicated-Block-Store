@@ -57,7 +57,7 @@ using namespace std;
  *****************************************************************************/
 AddressTranslation atl;
 WAL *wal;
-map<string, int> KV_STORE;
+map<string, TxnData> KV_STORE;
 KVStore kvObj;
 string SERVER_1;
 string SERVER_2;
@@ -153,12 +153,14 @@ class ServiceCommImpl final: public ServiceComm::Service {
     dbgprintf("Prepare: txnId = %s | buffer = %s\n", txnId.c_str(), buffer.c_str());
 
     vector<pair<string, string>> rename_movs;
+    vector<string> original_files;
     int start=0;
 
     for (int i = 0; i < request->file_data_size(); i++)
     {
       dbgprintf("Prepare: start %d\n", start);
       string original_path = request->file_data(i).file_name();
+      original_files.push_back(original_path);
       dbgprintf("Prepare: original_path %s\n", original_path.c_str());
       int size = request->file_data(i).size();
       int offset = request->file_data(i).offset();
@@ -185,7 +187,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     // TODO 4.3 Create and cp undo // NOT NEEDED
 
     // 4.4 Add id to KV store
-    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files);
     reply->set_status(0);
     dbgprintf("Prepare: Exiting function\n");
     return Status::OK;
@@ -350,6 +352,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     int start = 0;
     vector<PathData> pathData;
     vector<pair<string, string>> rename_movs;
+    vector<string> original_files;
     string txnId = "";
 
     address = request->addr();
@@ -367,6 +370,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       string temp_path = helper.GenerateTempPath(pd.path.c_str());
       dbgprintf("Write: temp_path = %s\n", temp_path.c_str());
       string original_path = pd.path;
+      original_files.push_back(original_path);
       dbgprintf("Write: original_path = %s\n", original_path.c_str());
       // tmp file, orginal file
       rename_movs.push_back(make_pair(temp_path, original_path));
@@ -393,7 +397,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // 3.4 create and cp to undo file - NOT NEEDED
 
     // 3.5 Add id to KV store (ordered map)
-    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files);
     
     // 3.6 call prepare()
     Status prepareResp = callPrepare(txnId, buffer, pathData);

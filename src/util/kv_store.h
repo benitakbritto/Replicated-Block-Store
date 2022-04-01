@@ -4,6 +4,8 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <vector>
+#include "state.h"
 
 /******************************************************************************
  * MACROS
@@ -19,16 +21,23 @@ using namespace std;
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
+struct TransactionData
+{
+    vector<string> original_files;
+    int state;
+};
 
+typedef TransactionData TxnData;
 
 class KVStore
 {
 public:
     KVStore() {}
 
-    int GetStateFromKVStore(map<string, int> &KV_STORE, string txn_id);
-    void UpdateStateOnKVStore(map<string, int> &KV_STORE, string txn_id, int state);
-    void DeleteFromKVStore(map<string, int> &KV_STORE, string txn_id);
+    void AddToKVStore(map<string, TxnData> &KV_STORE, string txn_id, vector<string> &original_files);
+    int GetStateFromKVStore(map<string, TxnData> &KV_STORE, string txn_id);
+    void UpdateStateOnKVStore(map<string, TxnData> &KV_STORE, string txn_id, int state);
+    void DeleteFromKVStore(map<string, TxnData> &KV_STORE, string txn_id);
 };
 
 #endif

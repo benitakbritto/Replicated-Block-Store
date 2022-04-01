@@ -4,19 +4,12 @@
 #include <iostream>
 #include <memory>
 #include <string>
-
 #include <grpcpp/grpcpp.h>
-
 #ifdef BAZEL_BUILD
 #include "examples/protos/blockstorage.grpc.pb.h"
 #else
 #include "blockstorage.grpc.pb.h"
 #endif
-
-/******************************************************************************
- * MACROS
- *****************************************************************************/
-
 
 /******************************************************************************
  * NAMESPACES
@@ -30,10 +23,7 @@ using blockstorage::ReadReply;
 using blockstorage::ReadRequest;
 using blockstorage::WriteReply;
 using blockstorage::WriteRequest;
-
-/******************************************************************************
- * GLOBALS
- *****************************************************************************/
+using namespace std;
 
 class BlockStorageClient  
 {
@@ -47,7 +37,7 @@ public:
     
     void Connect(string target);
     Status Write(int address, string buf);
-    Status Read(int address);
+    Status Read(ReadRequest request, ReadReply* reply,int address);
 };
 
 #endif

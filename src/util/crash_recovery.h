@@ -5,24 +5,32 @@
 #include <vector>
 #include <string>
 #include "state.h"
+#include <grpcpp/grpcpp.h>
+#include "blockstorage.grpc.pb.h"
+#include "servercomm.grpc.pb.h"
+#include <fcntl.h>
 
 /******************************************************************************
  * NAMESPACE
  *****************************************************************************/
 using namespace std;
+using namespace blockstorage;
+using grpc::ClientContext;
+using grpc::Status;
+using blockstorage::ServiceComm;
+using blockstorage::GetPendingReplicationTransactionsRequest;
+using blockstorage::GetPendingReplicationTransactionsReply;
+using blockstorage::ForcePendingWritesRequest;
+using blockstorage::ForcePendingWritesReply;
+using blockstorage::GetTransactionStateRequest;
+using blockstorage::GetTransactionStateReply;
+using blockstorage::CommitRequest;
+using blockstorage::CommitReply;
+using grpc::ClientReader;
 
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
-// enum State 
-// {
-//     START = 0,
-//     ABORT = 1,
-//     RPC_INIT = 2,
-//     COMMIT = 3,
-//     PENDING_REPLICATION = 4
-// };
-
 enum Operation
 {
     MOVE
@@ -47,12 +55,7 @@ typedef LogData Data;
 /******************************************************************************
  * MACROS
  *****************************************************************************/
-// #define STATE_START                 "TXN_START"
-// #define STATE_ABORT                 "ABORT"
-// #define STATE_RPC_INIT              "REPL_INIT"
-// #define STATE_COMMIT                "COMMIT"
-// #define STATE_PENDING_REPLICATION   "PENDING_REPLICATION"
-#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/src/self.log" // TODO: Check this
+#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/storage/self.log"
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 #define DELIM                       ":"    
@@ -62,8 +65,7 @@ class CrashRecovery
 {
 public:
     CrashRecovery() {}
-    int Recover();
-    
+    int Recover(unique_ptr<ServiceComm::Stub> &_stub);
 };
 
 #endif

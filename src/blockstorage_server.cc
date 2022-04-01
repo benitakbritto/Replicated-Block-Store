@@ -23,6 +23,7 @@
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
 #include "lb.grpc.pb.h"
+#include "util/crash_recovery.h"
 
 /******************************************************************************
  * NAMESPACE
@@ -58,7 +59,7 @@ using namespace std;
  *****************************************************************************/
 AddressTranslation atl;
 WAL *wal;
-map<string, int> KV_STORE;
+map<string, TxnData> KV_STORE;
 KVStore kvObj;
 string SERVER_1;
 string SERVER_2;
@@ -144,6 +145,31 @@ class Helper {
     return 0;    // TODO: check the error code
   }
 
+  string GetData(string file_path, int size, int offset)
+  {
+    dbgprintf("GetData: Entering function\n");
+    int fd =  open(file_path.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+      dbgprintf("GetData: failed to open file\n");
+      return string("");
+    }
+
+    char content[size];
+    memset(content, '\0', size);
+    int pread_rc = pread(fd, content, size, offset);
+    if (pread_rc == -1)
+    {
+      dbgprintf("GetData: pread failed\n");
+      close(fd);
+      return string("");
+    }
+
+    dbgprintf("GetData: content = %s\n", string(content).c_str());
+    dbgprintf("GetData: Exiting function\n");
+    close(fd);
+    return string(content);
+  }
 };
 
 /*
@@ -159,15 +185,21 @@ class ServiceCommImpl final: public ServiceComm::Service {
     dbgprintf("Prepare: txnId = %s | buffer = %s\n", txnId.c_str(), buffer.c_str());
 
     vector<pair<string, string>> rename_movs;
+    vector<string> original_files;
+    vector<int> sizes;
+    vector<int> offsets;
     int start=0;
 
     for (int i = 0; i < request->file_data_size(); i++)
     {
       dbgprintf("Prepare: start %d\n", start);
       string original_path = request->file_data(i).file_name();
+      original_files.push_back(original_path);
       dbgprintf("Prepare: original_path %s\n", original_path.c_str());
       int size = request->file_data(i).size();
+      sizes.push_back(size);
       int offset = request->file_data(i).offset();
+      offsets.push_back(offset);
       dbgprintf("Prepare: size = %d | offset = %d\n", size, offset);
       string temp_path = helper.GenerateTempPath(original_path);
       dbgprintf("Prepare: temp_path = %s\n", temp_path.c_str());
@@ -191,7 +223,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     // TODO 4.3 Create and cp undo // NOT NEEDED
 
     // 4.4 Add id to KV store
-    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files, sizes, offsets);
     reply->set_status(0);
     dbgprintf("Prepare: Exiting function\n");
     return Status::OK;
@@ -220,9 +252,55 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
-  // TODO
-  Status GetTransactionStatus(ServerContext* context, const GetTransactionStatusRequest* request, GetTransactionStatusReply* reply) override {
-    reply->set_status(0);
+  Status GetPendingReplicationTransactions(ServerContext* context, 
+                                          const GetPendingReplicationTransactionsRequest* request, 
+                                          GetPendingReplicationTransactionsReply* reply) override {
+    dbgprintf("GetPendingReplicationTransactions: Entering function\n");
+    
+    for (auto itr = KV_STORE.begin(); itr != KV_STORE.end(); itr++)
+    {
+      if (itr->second.state == PENDING_REPLICATION)
+      {
+        dbgprintf("GetPendingReplicationTransactions: transaction id = %s\n", (itr->first).c_str());
+        auto data = reply->add_txn();
+        data->set_transaction_id(itr->first);
+        dbgprintf("GetPendingReplicationTransactions: transaction id = %s\n", (data->transaction_id()).c_str());
+      }
+    }
+
+    dbgprintf("GetPendingReplicationTransactions: Exiting function\n");
+    return Status::OK;
+  }
+
+  Status ForcePendingWrites(ServerContext* context, const ForcePendingWritesRequest* request, ServerWriter<ForcePendingWritesReply>*writer) override {
+    dbgprintf("ForcePendingWrites: Entering function\n");
+    ForcePendingWritesReply reply;
+    for (int i = 0; i < request->txn_size(); i++)
+    {
+      string pending_write_transaction_id = request->txn(i).transaction_id();
+      vector<string> original_files;
+      vector<int> sizes;
+      vector<int> offsets;
+      kvObj.GetTransactionDataFromKVStore(KV_STORE, 
+                                          pending_write_transaction_id,
+                                          original_files,
+                                          sizes,
+                                          offsets);
+      int len = original_files.size();
+      for (int j = 0; j < len; j++)
+      {
+        string content = helper.GetData(original_files[j], sizes[j], offsets[j]);
+        reply.set_transaction_id(pending_write_transaction_id);
+        reply.set_file_name(original_files[j]);
+        reply.set_content(content);
+        reply.set_size(sizes[j]);
+        reply.set_offset(offsets[j]);
+        writer->Write(reply);
+      }
+      return Status::OK;
+    }
+
+    dbgprintf("ForcePendingWrites: Exiting function\n");
     return Status::OK;
   }
 
@@ -285,6 +363,12 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }  
 
+  Status GetTransactionState(ServerContext* context, const GetTransactionStateRequest* request, GetTransactionStateReply* reply) override {
+    
+    int state = kvObj.GetStateFromKVStore(KV_STORE, request->txn_id());
+    reply->set_state(state);
+    return Status::OK;
+  }
 };
 
 // Logic and buffer behind the server's behavior.
@@ -292,10 +376,11 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
   // string myIP;
   // string otherIP;
-  std::unique_ptr<ServiceComm::Stub> _stub;
   Helper helper;
   
   public:
+  std::unique_ptr<ServiceComm::Stub> _stub;
+
   BlockStorageServiceImpl(string _otherIP){
     // myIP=myIP;
     // otherIP=_otherIP;
@@ -326,9 +411,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
 
-      char *buf = new char[pd.size];
+      char *buf = new char[pd.size+1];
+      memset(buf, '\0', pd.size+1);
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
-      dbgprintf("Read: bytesRead = %d\n", bytesRead);
+      dbgprintf("Read: bytesRead = %d, starting at offset=%d, size=%d\n", bytesRead, pd.offset, pd.size);
       if (bytesRead == -1){
         cout << "[ERR] pread failed" << endl;
         reply->set_error(errno);
@@ -336,7 +422,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
         close(fd);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to read bytes\n");
       }
-      readContent += buf;
+      dbgprintf("Read: pread buf = %s\n", buf);
+      readContent += string(buf);
       dbgprintf("Read: readContent = %s\n", readContent.c_str());
       close(fd);
     }
@@ -354,6 +441,9 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     int start = 0;
     vector<PathData> pathData;
     vector<pair<string, string>> rename_movs;
+    vector<string> original_files;
+    vector<int> sizes;
+    vector<int> offsets;
     string txnId = "";
 
     address = request->addr();
@@ -371,7 +461,10 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       string temp_path = helper.GenerateTempPath(pd.path.c_str());
       dbgprintf("Write: temp_path = %s\n", temp_path.c_str());
       string original_path = pd.path;
-      dbgprintf("Write: original_path = %s\n", original_path.c_str());
+      original_files.push_back(original_path);
+      sizes.push_back(pd.size);
+      offsets.push_back(pd.offset);
+      dbgprintf("Write: original_path = %s | size = %d | offset = %d \n", original_path.c_str(), pd.size, pd.offset);
       // tmp file, orginal file
       rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
@@ -397,7 +490,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     // 3.4 create and cp to undo file - NOT NEEDED
 
     // 3.5 Add id to KV store (ordered map)
-    kvObj.UpdateStateOnKVStore(KV_STORE, txnId, START);
+    kvObj.AddToKVStore(KV_STORE, txnId, original_files, sizes, offsets);
     
     // 3.6 call prepare()
     Status prepareResp = callPrepare(txnId, buffer, pathData);
@@ -447,6 +540,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       {
         // Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // TODO: Undo changes
         // Return failure
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }       
@@ -473,6 +567,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
          wal->log_abort(txnId);
         // 6.2 Remove from KV
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // TODO: Delete temp and undo files
         // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
@@ -506,7 +601,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   Status callCommit(string txnId, vector<PathData> pathData){
-    dbgprintf("Entering callCommit\n");
+    dbgprintf("callCommit: Entering function\n");
     ClientContext context;
     CommitRequest request;
     CommitReply reply;
@@ -520,8 +615,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Commit(&context, request, &reply);
-    dbgprintf("status code: %d\n", status.error_code());
-    dbgprintf("Exiting callCommit\n");
+    dbgprintf("callCommit: Commit status code: %d\n", status.error_code());
+    dbgprintf("callCommitL Exiting function\n");
     return status;
   }
   
@@ -570,12 +665,12 @@ void PrepareStorage() {
 }
 
 void *RunBlockStorageServer(void* _otherIP) {
+  // Init Service
   // SERVER_1 = "0.0.0.0:" + std::to_string(port);
   char* otherIP = (char*)_otherIP;
   dbgprintf("RunBlockStorageServer: otherIP = %s\n", otherIP);
   // std::string server_address("0.0.0.0:50051");
   BlockStorageServiceImpl service(otherIP);
-
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
@@ -584,7 +679,17 @@ void *RunBlockStorageServer(void* _otherIP) {
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "BlockStorage Server listening on " << self_addr_lb << std::endl;
 
-  server->Wait();
+  // TODO: Uncomment later -- Start Recovery
+  dbgprintf("Recover: Starting\n");
+  CrashRecovery cr;
+  int recover_rc = cr.Recover(service._stub);
+
+  // Start Service
+  if (recover_rc == 0) 
+  {
+    dbgprintf("Recovery done. Starting server\n");
+    server->Wait();
+  }
 
   return NULL;
 }

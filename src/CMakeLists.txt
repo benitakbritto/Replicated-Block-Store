@@ -131,13 +131,19 @@ foreach(_target
     ${_PROTOBUF_LIBPROTOBUF})
 endforeach()
 
+
+add_library(cr "util/crash_recovery.cc")
+target_link_libraries(cr 
+  hw_grpc_proto
+  comm_grpc_proto
+)
+
 foreach(_target
   blockstorage_server )
   add_library(atl "util/address_translation.cc")
   add_library(wal "util/wal.cc")
   add_library(txn "util/txn.cc")
   add_library(kv "util/kv_store.cc")
-  add_library(cr "util/crash_recovery.cc")
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     atl

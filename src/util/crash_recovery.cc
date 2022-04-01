@@ -46,10 +46,10 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
 
     // TODO: Test - getting status as unavailable
     // Get pending writes
-    ClientContext context;
+    ClientContext context_gprt;
     GetPendingReplicationTransactionsRequest request_gprt;
     GetPendingReplicationTransactionsReply reply_gprt;
-    Status status = _stub->GetPendingReplicationTransactions(&context, request_gprt, &reply_gprt);
+    Status status = _stub->GetPendingReplicationTransactions(&context_gprt, request_gprt, &reply_gprt);
     dbgprintf("Recover: GetPendingReplicationTransactions status code = %d\n", status.error_code());
 
     // TODO: Test
@@ -76,9 +76,10 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
 
     // TODO: Test
     // Apply pending writes
+    ClientContext context_fpw;
     ForcePendingWritesReply reply_fpw;
     std::unique_ptr<ClientReader<ForcePendingWritesReply>> reader(
-                            _stub->ForcePendingWrites(&context, request_fpw));
+                            _stub->ForcePendingWrites(&context_fpw, request_fpw));
     while (reader->Read(&reply_fpw))
     {
         string transaction_id = reply_fpw.transaction_id();
@@ -88,6 +89,9 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
         int size = reply_fpw.size();
         WriteData(file_name, content, size, offset);
     }
+    status = reader->Finish();
+    dbgprintf("Recover: ForcePendingWritesReply status code = %d\n", status.error_code());
+
 
     // Recover from other states    
     for (auto it = logMap.begin(); it != logMap.end(); it++)

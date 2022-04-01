@@ -9,6 +9,17 @@ service ServiceComm
     rpc GetPendingReplicationTransactions(GetPendingReplicationTransactionsRequest) returns (GetPendingReplicationTransactionsReply) {}
     rpc ForcePendingWrites(ForcePendingWritesRequest) returns (stream ForcePendingWritesReply) {}
     rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
+    rpc GetTransactionState(GetTransactionStateRequest) returns (GetTransactionStateReply) {}
+}
+
+message GetTransactionStateRequest
+{
+    string txn_id = 1;
+}
+
+message GetTransactionStateReply
+{
+    uint32 state = 1;
 }
 
 message FileData

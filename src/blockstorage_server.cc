@@ -139,7 +139,6 @@ class Helper {
     return 0;    // TODO: check the error code
   }
 
-  // TODO: Test
   string GetData(string file_path, int size, int offset)
   {
     dbgprintf("GetData: Entering function\n");
@@ -247,7 +246,6 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
-  // TODO: Test
   Status GetPendingReplicationTransactions(ServerContext* context, 
                                           const GetPendingReplicationTransactionsRequest* request, 
                                           GetPendingReplicationTransactionsReply* reply) override {
@@ -268,7 +266,6 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }
 
-  // TODO: Test
   Status ForcePendingWrites(ServerContext* context, const ForcePendingWritesRequest* request, ServerWriter<ForcePendingWritesReply>*writer) override {
     dbgprintf("ForcePendingWrites: Entering function\n");
     ForcePendingWritesReply reply;
@@ -360,6 +357,12 @@ class ServiceCommImpl final: public ServiceComm::Service {
     return Status::OK;
   }  
 
+  Status GetTransactionState(ServerContext* context, const GetTransactionStateRequest* request, GetTransactionStateReply* reply) override {
+    
+    int state = kvObj.GetStateFromKVStore(KV_STORE, request->txn_id());
+    reply->set_state(state);
+    return Status::OK;
+  }
 };
 
 // Logic and buffer behind the server's behavior.
@@ -423,7 +426,6 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     return Status::OK;
   }
 
-  // TODO: Decide if we should send success if prepare() / commit() fails on backup
   Status Write(ServerContext* context, const WriteRequest* request,
                   WriteReply* reply) override {
 
@@ -532,6 +534,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
       {
         // Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // TODO: Undo changes
         // Return failure
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }       
@@ -558,6 +561,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
          wal->log_abort(txnId);
         // 6.2 Remove from KV
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        // TODO: Delete temp and undo files
         // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
@@ -591,7 +595,7 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   }
 
   Status callCommit(string txnId, vector<PathData> pathData){
-    dbgprintf("Entering callCommit\n");
+    dbgprintf("callCommit: Entering function\n");
     ClientContext context;
     CommitRequest request;
     CommitReply reply;
@@ -605,8 +609,8 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
     }
     
     Status status = _stub->Commit(&context, request, &reply);
-    dbgprintf("status code: %d\n", status.error_code());
-    dbgprintf("Exiting callCommit\n");
+    dbgprintf("callCommit: Commit status code: %d\n", status.error_code());
+    dbgprintf("callCommitL Exiting function\n");
     return status;
   }
   
@@ -672,10 +676,14 @@ void *RunBlockStorageServer(void* _otherIP) {
   // TODO: Uncomment later -- Start Recovery
   dbgprintf("Recover: Starting\n");
   CrashRecovery cr;
-  cr.Recover(service._stub);
+  int recover_rc = cr.Recover(service._stub);
 
   // Start Service
-  server->Wait();
+  if (recover_rc == 0) 
+  {
+    dbgprintf("Recovery done. Starting server\n");
+    server->Wait();
+  }
 
   return NULL;
 }

@@ -13,12 +13,12 @@ using namespace std;
 map<string, Data> logMap;
 
 /******************************************************************************
- * HELPER FUNCTIONS
+ * HELPER FUNCTIONSf
  *****************************************************************************/
 void LoadData();
 void ExecuteTransactionStartRecovery(string id);
 void ExecuteTransactionAbortRecovery(string id);
-void ExecuteTransactionRpcInitRecovery(string id);
+void ExecuteTransactionRpcInitRecovery(string id, unique_ptr<ServiceComm::Stub> &_stub);
 void ExecuteTransactionCommitRecovery(string id);
 void ExecuteTransactionPendingReplicationRecovery(string id);
 void DeleteFiles(vector<string> file_names);
@@ -28,6 +28,8 @@ int GetOperation(string op);
 void PrintLogData(string id);
 string GetUndoFileName(string file_name);
 void WriteData(string file_path, string content, int size, int offset);
+void ApplyPendingWrites(unique_ptr<ServiceComm::Stub> &_stub);
+void Cleanup();
 
 // Tester
 // int main()
@@ -41,59 +43,15 @@ void WriteData(string file_path, string content, int size, int offset);
 int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
 {
     dbgprintf("Recover: Entering function\n");
-    // Parse log
+    // 1: Parse log
     LoadData();
+    dbgprintf("Recover: Parsing done\n");
 
-    // TODO: Test - getting status as unavailable
-    // Get pending writes
-    ClientContext context_gprt;
-    GetPendingReplicationTransactionsRequest request_gprt;
-    GetPendingReplicationTransactionsReply reply_gprt;
-    Status status = _stub->GetPendingReplicationTransactions(&context_gprt, request_gprt, &reply_gprt);
-    dbgprintf("Recover: GetPendingReplicationTransactions status code = %d\n", status.error_code());
+    // 2: ApplyPendingWrites
+    ApplyPendingWrites(_stub);
+    dbgprintf("Recover: Applied pending writes done\n");
 
-    // TODO: Test
-    // Go through RPC result and prune the list
-    ForcePendingWritesRequest request_fpw;
-    for (int i = 0; i < reply_gprt.txn_size(); i++)
-    {
-        string txnId = reply_gprt.txn(i).transaction_id();
-        string("Recover: txnId = %s\n", txnId.c_str());
-
-        // Transaction was not commited on this machine
-        if ((logMap.count(txnId) != 0 
-                && logMap[txnId].state != COMMIT)
-            || 
-            (logMap.count(txnId) == 0)) 
-        {
-            auto data = request_fpw.add_txn();
-            data->set_transaction_id(txnId);
-            // Set the state to commit
-            // as we will be forcing the write in the next step
-            if (logMap.count(txnId) != 0) logMap[txnId].state = COMMIT;
-        }
-    }
-
-    // TODO: Test
-    // Apply pending writes
-    ClientContext context_fpw;
-    ForcePendingWritesReply reply_fpw;
-    std::unique_ptr<ClientReader<ForcePendingWritesReply>> reader(
-                            _stub->ForcePendingWrites(&context_fpw, request_fpw));
-    while (reader->Read(&reply_fpw))
-    {
-        string transaction_id = reply_fpw.transaction_id();
-        string file_name = reply_fpw.file_name();
-        string content = reply_fpw.content();
-        int offset = reply_fpw.offset();
-        int size = reply_fpw.size();
-        WriteData(file_name, content, size, offset);
-    }
-    status = reader->Finish();
-    dbgprintf("Recover: ForcePendingWritesReply status code = %d\n", status.error_code());
-
-
-    // Recover from other states    
+    // 3: Recover from other states    
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {
         dbgprintf("Recover: Transation id = %s\n", it->first.c_str());
@@ -106,7 +64,7 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
                 ExecuteTransactionAbortRecovery(it->first);
                 break;
             case RPC_INIT:
-                ExecuteTransactionRpcInitRecovery(it->first);
+                ExecuteTransactionRpcInitRecovery(it->first, _stub);
                 break;
             case COMMIT:
                 ExecuteTransactionCommitRecovery(it->first);
@@ -119,9 +77,8 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
         }
     }
 
-    // TODECIDE
-    // Truncate log?
-    // Delete logMap ?
+    // 4: Cleanup
+    Cleanup();
 
     dbgprintf("Recover: Exiting function\n");
     return 0;
@@ -280,10 +237,16 @@ void ExecuteTransactionAbortRecovery(string id)
 {
     dbgprintf("ExecuteTransactionAbortRecovery: Entering function\n");
 
+    // undo changes
+    int len = logMap[id].cmd.file_names.size();
+    for (int i = 0; i < len; i++)
+    {
+        rename(GetUndoFileName(logMap[id].cmd.file_names[i]).c_str(),
+                logMap[id].cmd.file_names[i].c_str());
+    }
+
     // delete tmp and undo files
     vector <string> files_to_delete;
-
-    int len = logMap[id].cmd.file_names.size();
     for (int i = 0; i < len; i++)
     {
         // add tmp files to the list
@@ -299,16 +262,50 @@ void ExecuteTransactionAbortRecovery(string id)
     dbgprintf("ExecuteTransactionAbortRecovery: Exiting function\n");
 }
 
-// TODO
-void ExecuteTransactionRpcInitRecovery(string id)
+void ExecuteTransactionRpcInitRecovery(string id, unique_ptr<ServiceComm::Stub> &_stub)
 {
     dbgprintf("ExecuteTransactionRpcInitRecovery: Entering function\n");
 
     // Get state of txn id from other server
+    ClientContext context;
+    GetTransactionStateRequest request;
+    request.set_txn_id(id);
+    GetTransactionStateReply reply;
+    Status status = _stub->GetTransactionState(&context, request, &reply);
+    dbgprintf("ExecuteTransactionRpcInitRecovery: GetTransactionState status code = %d\n", status.error_code());
 
-    // If state was commited on other server - del undo file
+    int state = reply.state();
+    dbgprintf("ExecuteTransactionRpcInitRecovery: state = %d\n", state);
+    // force write on other server
+    if (state != COMMIT)
+    {
+        ClientContext context;
+        CommitRequest request;
+        CommitReply reply;
+        FileData* fileData;
 
-    // else force write on other server
+        request.set_transationid(id);
+        for (auto file : logMap[id].cmd.file_names)
+        {
+            fileData = request.add_file_data();
+            fileData->set_file_name(file);
+        }
+        Status status = _stub->Commit(&context, request, &reply);
+        dbgprintf("Recover: Commit status code: %d\n", status.error_code());
+    }
+    // del undo file
+    else
+    {
+        vector <string> files_to_delete;
+        int len = logMap[id].cmd.file_names.size();
+        for (int i = 0; i < len; i++)
+        {
+            // add undo files to the list
+            if (i % 2 != 0)
+                files_to_delete.push_back(GetUndoFileName(logMap[id].cmd.file_names[i]));            
+        }
+        DeleteFiles(files_to_delete);
+    }
 
     dbgprintf("ExecuteTransactionRpcInitRecovery: Exiting function\n");
 }
@@ -351,7 +348,6 @@ void DeleteFiles(vector<string> file_names)
     }
 }
 
-// TODO: Test
 // TODECIDE if we should write to temp and rename instead
 void WriteData(string file_path, string content, int size, int offset)
 {
@@ -373,4 +369,63 @@ void WriteData(string file_path, string content, int size, int offset)
     dbgprintf("WriteData: Exiting function\n");
     close(fd);
     return;
+}
+
+void ApplyPendingWrites(unique_ptr<ServiceComm::Stub> &_stub)
+{
+    // 1: Get pending writes
+    ClientContext context_gprt;
+    GetPendingReplicationTransactionsRequest request_gprt;
+    GetPendingReplicationTransactionsReply reply_gprt;
+    Status status = _stub->GetPendingReplicationTransactions(&context_gprt, request_gprt, &reply_gprt);
+    dbgprintf("Recover: GetPendingReplicationTransactions status code = %d\n", status.error_code());
+
+    // 2: Go through RPC result and prune the list
+    ForcePendingWritesRequest request_fpw;
+    for (int i = 0; i < reply_gprt.txn_size(); i++)
+    {
+        string txnId = reply_gprt.txn(i).transaction_id();
+        dbgprintf("Recover: txnId = %s\n", txnId.c_str());
+
+        // Transaction was not commited on this machine
+        if ((logMap.count(txnId) != 0 
+                && logMap[txnId].state != COMMIT)
+            || 
+            (logMap.count(txnId) == 0)) 
+        {
+            auto data = request_fpw.add_txn();
+            data->set_transaction_id(txnId);
+            // Set the state to commit
+            // as we will be forcing the write in the next step
+            if (logMap.count(txnId) != 0) logMap[txnId].state = COMMIT;
+        }
+    }
+
+    // 3: Apply pending writes
+    ClientContext context_fpw;
+    ForcePendingWritesReply reply_fpw;
+    std::unique_ptr<ClientReader<ForcePendingWritesReply>> reader(
+                            _stub->ForcePendingWrites(&context_fpw, request_fpw));
+    while (reader->Read(&reply_fpw))
+    {
+        string transaction_id = reply_fpw.transaction_id();
+        string file_name = reply_fpw.file_name();
+        string content = reply_fpw.content();
+        int offset = reply_fpw.offset();
+        int size = reply_fpw.size();
+        WriteData(file_name, content, size, offset);
+    }
+    status = reader->Finish();
+    dbgprintf("Recover: ForcePendingWritesReply status code = %d\n", status.error_code());
+}
+
+void Cleanup()
+{
+    // Truncate log
+    if (truncate(LOG_FILE_PATH, 0) != 0)
+    {
+        dbgprintf("Recover: truncation failed\n");
+    }
+    // Delete logMap
+    logMap.clear();
 }

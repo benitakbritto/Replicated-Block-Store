@@ -22,6 +22,10 @@ using blockstorage::GetPendingReplicationTransactionsRequest;
 using blockstorage::GetPendingReplicationTransactionsReply;
 using blockstorage::ForcePendingWritesRequest;
 using blockstorage::ForcePendingWritesReply;
+using blockstorage::GetTransactionStateRequest;
+using blockstorage::GetTransactionStateReply;
+using blockstorage::CommitRequest;
+using blockstorage::CommitReply;
 using grpc::ClientReader;
 
 /******************************************************************************
@@ -51,7 +55,7 @@ typedef LogData Data;
 /******************************************************************************
  * MACROS
  *****************************************************************************/
-#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/src/self.log" // TODO: Check this
+#define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/storage/self.log"
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 #define DELIM                       ":"    

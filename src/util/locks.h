@@ -1,16 +1,24 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+#include <cassert>
+#include <chrono>
+#include <iostream>
+#include <thread>
+
+/******************************************************************************
+ * NAMESPACES
+ *****************************************************************************/
+using namespace std;
 
 class MutexMap {
-    std::mutex outer_mutex;
-    std::unordered_map<std::string, std::shared_mutex> mutices;
+    mutex outer_mutex;
+    unordered_map<string, shared_mutex> mutices;
 
     public:
-    MutexMap();
+    MutexMap() {}
 
-    std::shared_lock<std::shared_mutex> GetReadLock(std::string key);
-    std::unique_lock<std::shared_mutex> GetWriteLock(std::string key);
-    // void ReleaseReadLock(std::shared_lock<std::shared_mutex>* file_mutex);
-    // void ReleaseWriteLock(std::unique_lock<std::shared_mutex> file_mutex); 
+    shared_lock<shared_mutex> GetReadLock(string key);
+    unique_lock<shared_mutex> GetWriteLock(string key);
+    void ReleaseLock(shared_lock<shared_mutex>& file_mutex);
 };

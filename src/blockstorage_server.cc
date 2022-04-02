@@ -783,6 +783,8 @@ class ServiceCommClient {
             stream->Read(&reply);
             cout << "[INFO:] recv reply for packet number- " << reply.error() << endl;
             
+            
+
             stream->Write(request);
             cout << "[INFO:] sent ack for packet number - " << reply.error() << endl;
         }
@@ -889,9 +891,8 @@ void *TestHB(void* _identity) {
 }
 
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr]
-// e.g ./blockstorage_server PRIMARY 0.0.0.0:40051 0.0.0.0:60052 0.0.0.0:60053
-// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:60053
-// e.g ./blockstorage_server BACKUP 0.0.0.0:40052 0.0.0.0:60053 0.0.0.0:60052
+// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 20.109.180.121:60053
+// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.124.236.11:60052
 
 // TODO: add load balancer addr as a parameter
 int main(int argc, char** argv) {

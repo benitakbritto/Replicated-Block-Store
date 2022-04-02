@@ -33,7 +33,10 @@
 
 # build files
 src/cmake/*
+performance/cmake/*
 
 #editor
 .vscode
 storage
+
+*scratch.cpp

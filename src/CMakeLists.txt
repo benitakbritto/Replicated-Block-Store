@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5.1)
 
 project(BlockStorage C CXX)
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../common.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../common2.cmake)
 
 # Proto files
 # Proto file 1

@@ -11,4 +11,5 @@ class MutexMap {
 
     std::shared_lock<std::shared_mutex> GetReadLock(std::string key);
     std::unique_lock<std::shared_mutex> GetWriteLock(std::string key);
+    void MutexMap::GetWriteLock(std::lock(file_mutex)) 
 };

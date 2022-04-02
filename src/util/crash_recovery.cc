@@ -13,7 +13,7 @@ using namespace std;
 map<string, Data> logMap;
 
 /******************************************************************************
- * HELPER FUNCTIONSf
+ * HELPER FUNCTIONS
  *****************************************************************************/
 void LoadData();
 void ExecuteTransactionStartRecovery(string id);

@@ -40,12 +40,6 @@ class BlockStorageService final : public BlockStorage::Service {
             return nodes->find(PRIMARY_STR) == nodes->end();
         }
 
-    public:
-        BlockStorageService(map<string, string> &servers, map<string, BlockStorageClient*>& clients){
-            nodes = &servers;
-            bs_clients = &clients;
-        }
-
         string getServerToRouteTo(){
             idx = 1 - idx;
             if(idx == 0 && is_primary_registered()) {
@@ -53,6 +47,12 @@ class BlockStorageService final : public BlockStorage::Service {
             }
 
             return BACKUP_STR;
+        }
+
+    public:
+        BlockStorageService(map<string, string> &servers, map<string, BlockStorageClient*>& clients){
+            nodes = &servers;
+            bs_clients = &clients;
         }
 
         Status Read(ServerContext* context, const ReadRequest* request,
@@ -67,7 +67,6 @@ class BlockStorageService final : public BlockStorage::Service {
             dbgprintf("reached LB write \n");
             return (*bs_clients)[PRIMARY_STR]->Write(request->addr(), request->buffer());
         }
-
 };
 
 class LBNodeCommService final: public LBNodeComm::Service {

@@ -23,6 +23,10 @@ std::unique_lock<std::shared_mutex> MutexMap::GetWriteLock(std::string key) {
     return std::unique_lock(file_mutex);
 }
 
-void MutexMap::GetWriteLock(std::lock(file_mutex)) {
-    file_mutex.unlock();
-}
+// void ReleaseReadLock(std::shared_lock<std::shared_mutex>* file_mutex) {
+//     file_mutex->unlock();
+// }
+
+//  void ReleaseWriteLock(std::unique_lock<std::shared_mutex> file_mutex) {
+//     file_mutex.unlock();
+// }

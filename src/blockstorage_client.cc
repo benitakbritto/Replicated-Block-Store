@@ -48,12 +48,15 @@ void testReadWrite(BlockStorageClient* blockstorageClient, int address){
     return;
   }
 
-  if (reply.buffer().compare(buffer)) 
+  if (reply.buffer().compare(buffer)) {
     cout << "TEST PASSED: Aligned read data is same as write buffer " << endl;
-  else
+  }
+  
+  else {
     cout << "TEST FAILED: Aligned read data is not the same as write buffer " << endl;
     cout << "Read : " << reply.buffer() << endl;
     cout << "Written: " << buffer << endl; 
+  }
 }
 
 int main(int argc, char** argv) {

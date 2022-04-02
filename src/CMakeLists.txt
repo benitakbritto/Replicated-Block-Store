@@ -144,6 +144,7 @@ foreach(_target
   add_library(wal "util/wal.cc")
   add_library(txn "util/txn.cc")
   add_library(kv "util/kv_store.cc")
+  add_library(locks "util/locks.cc")
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     atl
@@ -151,6 +152,7 @@ foreach(_target
     txn
     kv
     cr
+    locks
     hw_grpc_proto
     comm_grpc_proto
     lb_grpc_proto

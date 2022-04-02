@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <chrono>
 #include <ctime> 
+#include <mutex>
+#include <shared_mutex>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -24,6 +26,7 @@
 #include "servercomm.grpc.pb.h"
 #include "lb.grpc.pb.h"
 #include "util/crash_recovery.h"
+#include "util/locks.h"
 
 /******************************************************************************
  * NAMESPACE
@@ -54,7 +57,7 @@ using namespace std;
 
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
-/******************************************************************************
+/*****************************************************************************
  * GLOBALS
  *****************************************************************************/
 AddressTranslation atl;
@@ -375,17 +378,16 @@ class ServiceCommImpl final: public ServiceComm::Service {
 // Logic and buffer behind the server's behavior.
 class BlockStorageServiceImpl final : public BlockStorage::Service {
 
-  // string myIP;
-  // string otherIP;
+  private:
   Helper helper;
+  MutexMap mutexMap;
   
   public:
   std::unique_ptr<ServiceComm::Stub> _stub;
 
   BlockStorageServiceImpl(string _otherIP){
-    // myIP=myIP;
-    // otherIP=_otherIP;
     _stub = ServiceComm::NewStub(grpc::CreateChannel(_otherIP, grpc::InsecureChannelCredentials()));
+    // mutexMap = MutexMap();
   }
 
   string CreateTransactionId()
@@ -414,7 +416,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
 
       char *buf = new char[pd.size+1];
       memset(buf, '\0', pd.size+1);
+      
+      dbgprintf("Acquiring read lock");
+      std::shared_lock<std::shared_mutex> readLock = mutexMap.GetReadLock(pd.path.c_str());
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
+      readLock.unlock();
+      dbgprintf("Released read lock");
+
       dbgprintf("Read: bytesRead = %d, starting at offset=%d, size=%d\n", bytesRead, pd.offset, pd.size);
       if (bytesRead == -1){
         cout << "[ERR] pread failed" << endl;
@@ -891,8 +899,8 @@ void *StartHB(void* _identity) {
 }
 
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr] 
-// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 20.109.180.121:60053 0.0.0.0:50056
-// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.124.236.11:60052 0.0.0.0:50056
+// e.g ./blockstorage_server PRIMARY 52.151.53.152:40051 0.0.0.0:60052 20.109.180.121:60053 52.151.53.152:50056
+// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 52.151.53.152:60052 52.151.53.152:50056
 
 int main(int argc, char** argv) {
   self_addr_lb = string(argv[2]);

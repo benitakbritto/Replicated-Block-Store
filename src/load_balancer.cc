@@ -110,6 +110,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
         }
 
         Status SendHeartBeat(ServerContext* context, ServerReaderWriter<HeartBeatReply, HeartBeatRequest>* stream) override {
+            cout << "[INFO]: server IP" << context->peer() << endl;
             HeartBeatRequest request;
             HeartBeatReply reply;
 

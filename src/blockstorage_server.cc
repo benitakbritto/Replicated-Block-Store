@@ -664,9 +664,16 @@ void PrepareStorage() {
 
 }
 
+string convert_to_local_addr(string addr) {
+  int colon = addr.find(":");
+  return "0.0.0.0:" + addr.substr(colon+1); 
+}
+
 void *RunBlockStorageServer(void* _otherIP) {
   // Init Service
   // SERVER_1 = "0.0.0.0:" + std::to_string(port);
+  string self_addr_lb_local = convert_to_local_addr(self_addr_lb);
+
   char* otherIP = (char*)_otherIP;
   dbgprintf("RunBlockStorageServer: otherIP = %s\n", otherIP);
   // std::string server_address("0.0.0.0:50051");
@@ -674,10 +681,10 @@ void *RunBlockStorageServer(void* _otherIP) {
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   ServerBuilder builder;
-  builder.AddListeningPort(self_addr_lb, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(self_addr_lb_local, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "BlockStorage Server listening on " << self_addr_lb << std::endl;
+  std::cout << "BlockStorage Server listening on " << self_addr_lb_local << std::endl;
 
   // TODO: Uncomment later -- Start Recovery
   dbgprintf("Recover: Starting\n");
@@ -883,8 +890,10 @@ void *TestHB(void* _identity) {
 
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr]
 // e.g ./blockstorage_server PRIMARY 0.0.0.0:40051 0.0.0.0:60052 0.0.0.0:60053
+// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:60053
 // e.g ./blockstorage_server BACKUP 0.0.0.0:40052 0.0.0.0:60053 0.0.0.0:60052
 
+// TODO: add load balancer addr as a parameter
 int main(int argc, char** argv) {
   self_addr_lb = string(argv[2]);
 

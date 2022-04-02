@@ -60,6 +60,20 @@ void testReadWrite(BlockStorageClient* blockstorageClient, int address){
   // cout << "Written: " << buffer << endl; 
 }
 
+void *testReadWriteConcurrent(void* bsClientPtr){
+  BlockStorageClient* blockstorageClient((BlockStorageClient*)bsClientPtr);
+  testReadWrite(blockstorageClient, 0);
+  return NULL;
+}
+
+void TestConcurrentAccess(BlockStorageClient* bsClientPtr){
+  pthread_t test_t1, test_t2;
+  pthread_create(&test_t1, NULL, testReadWriteConcurrent, bsClientPtr);
+  pthread_create(&test_t1, NULL, testReadWriteConcurrent, bsClientPtr);
+  pthread_join(test_t1, NULL);
+  pthread_join(test_t2, NULL);
+}
+
 int main(int argc, char** argv) {
   std::string target_str;
   std::string arg_str("--target");

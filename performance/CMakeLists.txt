@@ -165,6 +165,7 @@ foreach(_target
   target_link_libraries(${_target}
     pthread
     hw_grpc_proto
+    client_lib
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

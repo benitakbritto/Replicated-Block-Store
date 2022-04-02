@@ -78,6 +78,7 @@ string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
 
 string self_addr_lb;
+string lb_addr;
 
 class Helper {
   public:
@@ -872,7 +873,7 @@ void *Test(void* arg) {
   return NULL;
 }
 
-void *TestHB(void* _identity) {
+void *StartHB(void* _identity) {
   string identity_str((char*)_identity);
 
   cout << "[INFO]: starting as:" << identity_str << endl;
@@ -883,20 +884,19 @@ void *TestHB(void* _identity) {
     identity_enum = BACKUP;
   }
 
-  string target_str = "localhost:50056";
-  LBNodeCommClient lBNodeCommClient(target_str, identity_enum, self_addr_lb);
+  LBNodeCommClient lBNodeCommClient(lb_addr, identity_enum, self_addr_lb);
   lBNodeCommClient.SendHeartBeat();
 
   return NULL;
 }
 
-// ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr]
-// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 20.109.180.121:60053
-// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.124.236.11:60052
+// ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr] 
+// e.g ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 20.109.180.121:60053 0.0.0.0:50056
+// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.124.236.11:60052 0.0.0.0:50056
 
-// TODO: add load balancer addr as a parameter
 int main(int argc, char** argv) {
   self_addr_lb = string(argv[2]);
+  lb_addr = string(argv[5]);
 
   PrepareStorage();
   // Write Ahead Logger
@@ -905,17 +905,17 @@ int main(int argc, char** argv) {
   sem_init(&global_write_lock, 0, 1);
 
   pthread_t block_server_t, comm_server_t;
-  pthread_t test_t, test_hb;
+  pthread_t test_t, hb_t;
   
   pthread_create(&block_server_t, NULL, RunBlockStorageServer, argv[4]);
   pthread_create(&comm_server_t, NULL, RunCommServer, argv[3]);
   // pthread_create(&test_t, NULL, Test, NULL);
-  pthread_create(&test_hb, NULL, TestHB, argv[1]);
+  pthread_create(&hb_t, NULL, StartHB, argv[1]);
 
   pthread_join(block_server_t, NULL);
   pthread_join(comm_server_t, NULL);
   // pthread_join(test_t, NULL);
-  pthread_join(test_hb, NULL);
+  pthread_join(hb_t, NULL);
 
   return 0;
 }

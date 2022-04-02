@@ -41,7 +41,7 @@ void testReadWrite(BlockStorageClient* blockstorageClient, int address){
   ReadReply reply;
   request.set_addr(address);
 
-  Status readStatus = blockstorageClient.Read(request, &reply, address);
+  Status readStatus = blockstorageClient->Read(request, &reply, address);
   
   if (readStatus.error_code() == grpc::StatusCode::OK) {
     cout << "Read test failed" << endl;

@@ -27,6 +27,35 @@ string generateStr(){
   return buffer;
 }
 
+void testReadWrite(BlockStorageClient* blockstorageClient, int address){
+  
+  string buffer = generateStr();
+  Status writeStatus = blockstorageClient->Write(address, buffer);
+  cout<<writeStatus.error_code();
+  if (writeStatus.error_code() == grpc::StatusCode::OK) {
+    cout << "Write test failed" << endl;
+    return;
+  }
+
+  ReadRequest request;
+  ReadReply reply;
+  request.set_addr(address);
+
+  Status readStatus = blockstorageClient.Read(request, &reply, address);
+  
+  if (readStatus.error_code() == grpc::StatusCode::OK) {
+    cout << "Read test failed" << endl;
+    return;
+  }
+
+  if (reply.buffer().compare(buffer)) 
+    cout << "TEST PASSED: Aligned read data is same as write buffer " << endl;
+  else
+    cout << "TEST FAILED: Aligned read data is not the same as write buffer " << endl;
+    cout << "Read : " << reply.buffer() << endl;
+    cout << "Written: " << buffer << endl; 
+}
+
 int main(int argc, char** argv) {
   std::string target_str;
   std::string arg_str("--target");
@@ -52,21 +81,12 @@ int main(int argc, char** argv) {
 
   BlockStorageClient blockstorageClient(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   
-  // Test: Write
+  // Test: Read Write Aligned
   int address = 0;
-  string buffer = generateStr();
-  auto status = blockstorageClient.Write(address, buffer);
-  cout << "BlockStorage received errorcode: " << status.error_code() << std::endl;
+  testReadWrite(&blockstorageClient, address);
 
-  // Test: Read(0) - Aligned read
-  // int address = 1;
-  // string content = "";
-  // ReadRequest request;
-  // ReadReply reply;
-  // request.set_addr(address);
-  // auto status = blockstorageClient.Read(request, &reply, address);
-  // cout << "BlockStorage received errorcode: " << status.error_code() << endl;
-
-
+  // Test: Read Write Unaligned
+  address = 4096;
+  testReadWrite(&blockstorageClient, address);
   return 0;
 }

@@ -5,9 +5,9 @@ project(Performance C CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../common.cmake)
 
 # # Proto files
-# # Proto file 1
-# get_filename_component(hw_proto "../src/protos/blockstorage.proto" ABSOLUTE)
-# get_filename_component(hw_proto_path "${hw_proto}" PATH)
+# Proto file 1
+get_filename_component(hw_proto "../src/protos/blockstorage.proto" ABSOLUTE)
+get_filename_component(hw_proto_path "${hw_proto}" PATH)
 # # Proto file 2
 # get_filename_component(comm_proto "../src/protos/servercomm.proto" ABSOLUTE)
 # get_filename_component(comm_proto_path "${comm_proto}" PATH)
@@ -15,21 +15,21 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../common.cmake)
 # get_filename_component(lb_proto "../src/protos/lb.proto" ABSOLUTE)
 # get_filename_component(lb_proto_path "${lb_proto}" PATH)
 
-# # Generated sources
-# # Proto file 1
-# set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.pb.cc")
-# set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.pb.h")
-# set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.grpc.pb.cc")
-# set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.grpc.pb.h")
-# add_custom_command(
-#       OUTPUT "${hw_proto_srcs}" "${hw_proto_hdrs}" "${hw_grpc_srcs}" "${hw_grpc_hdrs}"
-#       COMMAND ${_PROTOBUF_PROTOC}
-#       ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
-#         --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
-#         -I "${hw_proto_path}"
-#         --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
-#         "${hw_proto}"
-#       DEPENDS "${hw_proto}")
+# Generated sources
+# Proto file 1
+set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.pb.cc")
+set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.pb.h")
+set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.grpc.pb.cc")
+set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/blockstorage.grpc.pb.h")
+add_custom_command(
+      OUTPUT "${hw_proto_srcs}" "${hw_proto_hdrs}" "${hw_grpc_srcs}" "${hw_grpc_hdrs}"
+      COMMAND ${_PROTOBUF_PROTOC}
+      ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+        -I "${hw_proto_path}"
+        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
+        "${hw_proto}"
+      DEPENDS "${hw_proto}")
 
 # # Proto file 2
 # set(comm_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/servercomm.pb.cc")
@@ -61,20 +61,20 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../common.cmake)
 #         "${lb_proto}"
 #       DEPENDS "${lb_proto}")
 
-# # Include generated *.pb.h files
-# include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+# Include generated *.pb.h files
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-# # hw_grpc_proto
-# # Proto file 1
-# add_library(hw_grpc_proto
-#   ${hw_grpc_srcs}
-#   ${hw_grpc_hdrs}
-#   ${hw_proto_srcs}
-#   ${hw_proto_hdrs})
-# target_link_libraries(hw_grpc_proto
-#   ${_REFLECTION}
-#   ${_GRPC_GRPCPP}
-#   ${_PROTOBUF_LIBPROTOBUF})
+# hw_grpc_proto
+# Proto file 1
+add_library(hw_grpc_proto
+  ${hw_grpc_srcs}
+  ${hw_grpc_hdrs}
+  ${hw_proto_srcs}
+  ${hw_proto_hdrs})
+target_link_libraries(hw_grpc_proto
+  ${_REFLECTION}
+  ${_GRPC_GRPCPP}
+  ${_PROTOBUF_LIBPROTOBUF})
 
 # # Proto file 2
 # add_library(comm_grpc_proto
@@ -114,10 +114,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../common.cmake)
 # #     ${_PROTOBUF_LIBPROTOBUF})
 # # endforeach()
 
-# add_library(client_lib "client.cc")
-# target_link_libraries(client_lib 
-#   hw_grpc_proto
-# )
+add_library(client_lib ${CMAKE_CURRENT_SOURCE_DIR}/../src/client.cc)
+target_link_libraries(client_lib 
+  hw_grpc_proto
+)
 
 # foreach(_target
 #   blockstorage_client load_balancer)
@@ -163,5 +163,9 @@ foreach(_target
   rw_perf )
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
-    pthread)
+    pthread
+    hw_grpc_proto
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF})
 endforeach()

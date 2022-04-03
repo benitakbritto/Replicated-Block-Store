@@ -10,6 +10,7 @@ service ServiceComm
     rpc ForcePendingWrites(ForcePendingWritesRequest) returns (stream ForcePendingWritesReply) {}
     rpc Sync(stream SyncRequest) returns (stream SyncReply) {}
     rpc GetTransactionState(GetTransactionStateRequest) returns (GetTransactionStateReply) {}
+    rpc Ping(PingServRequest) returns (PingServReply) {}
 }
 
 message GetTransactionStateRequest
@@ -101,3 +102,11 @@ message Operation {
     string filePath = 2;
     string buffer = 3;
 } 
+
+message PingServRequest {
+
+}
+
+message PingServReply {
+  
+}

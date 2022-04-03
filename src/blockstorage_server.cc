@@ -181,6 +181,10 @@ class Helper {
 */
 class ServiceCommImpl final: public ServiceComm::Service {
   Helper helper;
+
+  Status Ping(ServerContext* context, const PingServRequest* request, PingServReply* reply) override {
+    return Status::OK;
+  }
   
   Status Prepare(ServerContext* context, const PrepareRequest* request, PrepareReply* reply) override {
     dbgprintf("Prepare: Entering function\n");
@@ -393,6 +397,13 @@ class BlockStorageServiceImpl final : public BlockStorage::Service {
   string CreateTransactionId()
   {
     return to_string(duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count());
+  }
+
+  Status Ping(ServerContext* _context, const PingRequest* _request, PingReply* _reply) override {
+    ClientContext context;
+    PingServRequest request;
+    PingServReply reply;
+    return _stub->Ping(&context, request, &reply);
   }
 
   Status Read(ServerContext* context, const ReadRequest* request,
@@ -899,6 +910,7 @@ void *StartHB(void* _identity) {
 }
 
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr] 
+// ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:70053 20.124.236.11:50056
 // e.g ./blockstorage_server PRIMARY 52.151.53.152:40051 0.0.0.0:60052 20.109.180.121:60053 52.151.53.152:50056
 // e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 52.151.53.152:60052 52.151.53.152:50056
 

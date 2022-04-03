@@ -5,6 +5,7 @@ package blockstorage;
 service BlockStorage {
   rpc Read (ReadRequest) returns (ReadReply) {}
   rpc Write (WriteRequest) returns (WriteReply) {}
+  rpc Ping(PingRequest) returns (PingReply) {}
 }
 
 message ReadRequest {
@@ -23,4 +24,12 @@ message WriteRequest {
 
 message WriteReply {
   uint32 error = 1;
+}
+
+message PingRequest {
+
+}
+
+message PingReply {
+  
 }

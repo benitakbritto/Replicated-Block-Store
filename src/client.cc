@@ -23,3 +23,10 @@ Status BlockStorageClient::Write(int address,string buf){
     ClientContext context;
     return stub_->Write(&context, request, &reply);
 }
+
+Status BlockStorageClient::Ping() {
+    ClientContext context;
+    PingRequest request;
+    PingReply reply;
+    return stub_->Ping(&context, request, &reply);
+}

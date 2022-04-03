@@ -31,22 +31,35 @@ class BlockStorageService final : public BlockStorage::Service {
 
     private:
         // for round-robin
-        int idx = 
-        0;
+        int idx = 0;
         map<string, string>* nodes;
         map<string, BlockStorageClient*>* bs_clients;
 
-        bool is_primary_registered() {
-            return nodes->find(PRIMARY_STR) == nodes->end();
+        void print_map() {
+            for (std::map<string,string>::iterator it=nodes->begin(); it!=nodes->end(); ++it)
+                std::cout << it->first << " => " << it->second << '\n';
+        }
+        
+        bool is_registered(string identity) {
+            string addr = (*nodes)[identity];
+            return !addr.empty();
         }
 
         string getServerToRouteTo(){
             idx = 1 - idx;
-            if(idx == 0 && is_primary_registered()) {
+            cout << "[INFO]: idx is:" << idx << endl;
+            if(idx == 0) {
+                if (!is_registered(PRIMARY_STR)) return BACKUP_STR;
                 return PRIMARY_STR;
             }
 
-            return BACKUP_STR;
+            if(idx == 1) {
+                if (!is_registered(BACKUP_STR)) return PRIMARY_STR;
+                return BACKUP_STR;
+            }
+
+            // won't reach here, but compiler will cry without this.
+            return PRIMARY_STR;
         }
 
     public:

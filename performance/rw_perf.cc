@@ -1,22 +1,57 @@
+#include "../src/client.h"
 #include <iostream>
 #include <thread>
 #include <future>
 #include <chrono>
 #include <unistd.h>
-
-#include "../src/client.h"
 #include <grpcpp/grpcpp.h>
 #include "blockstorage.grpc.pb.h"
+
+using grpc::Channel;
+using grpc::ClientContext;
+using grpc::Status;
+using blockstorage::BlockStorage;
+using blockstorage::ReadReply;
+using blockstorage::ReadRequest;
+using blockstorage::WriteReply;
+using blockstorage::WriteRequest;
 
 using namespace std;
 
 uint64_t DIR_SIZE = 107374182;
 uint64_t FILE_SIZE = 4096;
 
+BlockStorageClient *blockstorageClient;
 
 void warmup() {
-    string data(5, 'w');
-    cout << data << endl;
+    string buffer(5, 'w');
+    int address = 0;
+    
+    Status writeStatus = blockstorageClient->Write(address, buffer);
+    cout<<writeStatus.error_code();
+    if (writeStatus.error_code() != grpc::StatusCode::OK) {
+        cout << "Write test failed" << endl;
+        return;
+    }
+
+    ReadRequest request;
+    ReadReply reply;
+    request.set_addr(address);
+
+    Status readStatus = blockstorageClient->Read(request, &reply, address);
+    
+    if (readStatus.error_code() != grpc::StatusCode::OK) {
+        cout << "Read test failed" << endl;
+        return;
+    }
+
+    if (reply.buffer().compare(buffer) == 0) {
+        cout << "TEST PASSED: Aligned read data is same as write buffer " << endl;
+    } else {
+        cout << "TEST FAILED: Aligned read data is not the same as write buffer " << endl;
+        cout << "Read : " << reply.buffer() << endl;
+        cout << "Written: " << buffer << endl; 
+    }
 }
 
 uint64_t read_worker(int start_addr, int jump, int N, int id) {
@@ -92,6 +127,8 @@ void sample2() {
 }
 
 int main() {
+    blockstorageClient = new BlockStorageClient(grpc::CreateChannel("0.0.0.0:50051", grpc::InsecureChannelCredentials()));
+    
     warmup();
     // read_perf(5);
     // sample();

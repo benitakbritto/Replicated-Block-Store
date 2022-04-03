@@ -18,18 +18,9 @@ using blockstorage::ReadRequest;
 using blockstorage::WriteReply;
 using blockstorage::WriteRequest;
 
-string generateStr(){
-  string buffer = "";
-  for (int i = 0; i < 4096; i++)
-  {
-    buffer += "a";
-  }
-  return buffer;
-}
-
 void testReadWrite(BlockStorageClient* blockstorageClient, int address){
   
-  string buffer = generateStr();
+  string buffer(4096, 'a');
   Status writeStatus = blockstorageClient->Write(address, buffer);
   cout<<writeStatus.error_code();
   if (writeStatus.error_code() == grpc::StatusCode::OK) {

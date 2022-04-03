@@ -1,7 +1,7 @@
 #include<errno.h>
 #include "client.h"
 
-#define DEBUG                       1                     
+#define DEBUG                       0                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 
 /*

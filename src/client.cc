@@ -1,9 +1,6 @@
 #include<errno.h>
 #include "client.h"
 
-#define DEBUG                       0                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
-
 Status BlockStorageClient::Read(const ReadRequest request,
                   ReadReply* reply, int address) 
 {

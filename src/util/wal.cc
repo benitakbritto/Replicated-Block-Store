@@ -8,7 +8,7 @@ WAL::WAL(string base_path) {
         throw runtime_error("[ERROR]: Could not create log file");
     }
 
-    cout << "[INFO]: Init logging at:" << log_file_path << endl;
+    dbgprintf("[INFO]: Init logging at: %s\n", log_file_path.c_str());
     sem_init(&lock, 0, 1);
 }
 
@@ -35,8 +35,8 @@ int WAL::log_prepare(string txn_id, vector<pair<string, string>> rename_movs) {
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
-        cout << "[ERROR]: PREPARE - failed to write " << log << endl; 
-        cout << "[ERROR]:" << strerror(errno) << endl;
+        dbgprintf("[ERROR]: PREPARE - failed to write %s\n", log.c_str());
+        dbgprintf("[ERROR]: %s\n", strerror(errno));
     } else {
         fsync(fd);
     }
@@ -52,8 +52,8 @@ int WAL::log_abort(string txn_id) {
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
-        cout << "[ERROR]: ABORT - failed to write " << log << endl; 
-        cout << "[ERROR]:" << strerror(errno) << endl;
+        dbgprintf("[ERROR]: ABORT - failed to write %s\n", log.c_str());
+        dbgprintf("[ERROR]: %s\n", strerror(errno));
     } else {
         fsync(fd);
     }
@@ -69,8 +69,8 @@ int WAL::log_commit(string txn_id) {
     int res = write(fd, log.c_str(), log.size());
     
     if (res == -1) {
-        cout << "[ERROR]: COMMIT - failed to write " << log << endl; 
-        cout << "[ERROR]:" << strerror(errno) << endl;
+        dbgprintf("[ERROR]: COMMIT - failed to write %s\n", log.c_str());
+        dbgprintf("[ERROR]: %s\n", strerror(errno));
     } else {
         fsync(fd);
     }
@@ -86,8 +86,8 @@ int WAL::log_replication_init(string txn_id) {
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
-        cout << "[ERROR]: REPL_INIT - failed to write " << log << endl; 
-        cout << "[ERROR]:" << strerror(errno) << endl;
+        dbgprintf("[ERROR]: REPLT_INIT - failed to write %s\n", log.c_str());
+        dbgprintf("[ERROR]: %s\n", strerror(errno));
     } else {
         fsync(fd);
     }
@@ -103,8 +103,8 @@ int WAL::log_pending_replication(string txn_id) {
     int res = write(fd, log.c_str(), log.size());
 
     if (res == -1) {
-        cout << "[ERROR]: PENDING_REPLICATION - failed to write " << log << endl; 
-        cout << "[ERROR]:" << strerror(errno) << endl;
+        dbgprintf("[ERROR]: PENDING_REPLICATION - failed to write %s\n", log.c_str());
+        dbgprintf("[ERROR]: %s\n", strerror(errno));
     } else {
         fsync(fd);
     }

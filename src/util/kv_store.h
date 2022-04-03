@@ -7,12 +7,7 @@
 #include <vector>
 #include "state.h"
 #include <semaphore.h>
-
-/******************************************************************************
- * MACROS
- *****************************************************************************/
-#define DEBUG                       1                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
+#include "common.h"
 
 /******************************************************************************
  * NAMESPACE
@@ -32,6 +27,9 @@ struct TransactionData
 typedef TransactionData TxnData;
 extern sem_t global_kv_store_lock;
 
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class KVStore
 {
 public:

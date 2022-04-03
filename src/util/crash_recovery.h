@@ -9,6 +9,9 @@
 #include "blockstorage.grpc.pb.h"
 #include "servercomm.grpc.pb.h"
 #include <fcntl.h>
+#include "common.h"
+#include <map>
+#include <fstream>
 
 /******************************************************************************
  * NAMESPACE
@@ -56,8 +59,6 @@ typedef LogData Data;
  * MACROS
  *****************************************************************************/
 #define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/storage/self.log"
-#define DEBUG                       1                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 #define DELIM                       ":"    
 #define OPERATION_MOVE              "MV"       
 

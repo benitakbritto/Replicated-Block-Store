@@ -1,3 +1,6 @@
+#ifndef WAL_H
+#define WAL_H
+
 #include <iostream>
 #include <fcntl.h>
 #include <vector>
@@ -8,9 +11,17 @@
 #include <unistd.h>
 #include <cstring>
 #include "state.h"
+#include "wal.h"
+#include "common.h"
 
+/******************************************************************************
+ * NAMESPACES
+ *****************************************************************************/
 using namespace std;
 
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class WAL {
     private:
         string log_file_path;
@@ -47,3 +58,5 @@ class WAL {
 
         int log_pending_replication(string txn_id);
 };
+
+#endif

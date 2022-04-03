@@ -1,8 +1,21 @@
+#ifndef TXN_H
+#define TXN_H
+
 #include <iostream>
 #include <vector>
+#include "common.h"
+#include <utility>
+#include <semaphore.h>
+#include <threads.h>
 
+/******************************************************************************
+ * NAMESPACES
+ *****************************************************************************/
 using namespace std;
 
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class Txn {
     private:
         string status;
@@ -15,3 +28,5 @@ class Txn {
         void set_ops(vector<pair<string, string>> ops);
         vector<pair<string, string>> get_ops();
 };
+
+#endif

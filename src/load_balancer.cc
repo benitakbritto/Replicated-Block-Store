@@ -5,30 +5,37 @@
 #include "blockstorage.grpc.pb.h"
 #include "lb.grpc.pb.h"
 #include "client.h"
-
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/health_check_service_interface.h>
+#include "util/common.h"
 
+/******************************************************************************
+ * NAMESPACES
+ *****************************************************************************/
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::ServerReaderWriter;
-
 using namespace blockstorage;
 using namespace std;
 
+/******************************************************************************
+ * MACROS
+ *****************************************************************************/
 #define PRIMARY_STR "PRIMARY"
 #define BACKUP_STR "BACKUP"
 
-#define DEBUG                       1                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
-
+/******************************************************************************
+ * GLOBALS
+ *****************************************************************************/
 map<string, string> live_servers;
 map<string, BlockStorageClient*> bs_clients;
 
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class BlockStorageService final : public BlockStorage::Service {
-
     private:
         // for round-robin
         int idx = 0;
@@ -37,7 +44,7 @@ class BlockStorageService final : public BlockStorage::Service {
 
         void print_map() {
             for (std::map<string,string>::iterator it=nodes->begin(); it!=nodes->end(); ++it)
-                std::cout << it->first << " => " << it->second << '\n';
+                dbgprintf("%s => %s\n", it->first.c_str(), it->second.c_str());
         }
         
         bool is_registered(string identity) {
@@ -47,7 +54,8 @@ class BlockStorageService final : public BlockStorage::Service {
 
         string getServerToRouteTo(){
             idx = 1 - idx;
-            cout << "[INFO]: idx is:" << idx << endl;
+            dbgprintf("[INFO]: idx is: %d\n", idx);
+
             if(idx == 0) {
                 if (!is_registered(PRIMARY_STR)) return BACKUP_STR;
                 return PRIMARY_STR;
@@ -84,11 +92,14 @@ class BlockStorageService final : public BlockStorage::Service {
          Status Ping(ServerContext* context, const PingRequest* request,
                   PingReply* reply) override {
             string key = getServerToRouteTo();
-            dbgprintf("Routing read to %s\n", key.c_str());
+            dbgprintf("Routing ping to %s\n", key.c_str());
             return (*bs_clients)[key]->Ping();
         }
 };
 
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class LBNodeCommService final: public LBNodeComm::Service {
     private:
         map<string, string>* nodes;
@@ -118,8 +129,8 @@ class LBNodeCommService final: public LBNodeComm::Service {
         }
 
         void print_identity() {
-            cout << PRIMARY_STR << ":" << get_peer_ip(PRIMARY_STR) << endl;
-            cout << BACKUP_STR << ":" << get_peer_ip(BACKUP_STR) << endl;
+            dbgprintf("%s: %s\n", PRIMARY_STR, get_peer_ip(PRIMARY_STR).c_str());
+            dbgprintf("%s: %s\n", BACKUP_STR, get_peer_ip(BACKUP_STR).c_str());
         }
 
     public:
@@ -129,7 +140,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
         }
 
         Status SendHeartBeat(ServerContext* context, ServerReaderWriter<HeartBeatReply, HeartBeatRequest>* stream) override {
-            cout << "[INFO]: server IP" << context->peer() << endl;
+            dbgprintf("[INFO]: server IP %s\n", context->peer().c_str());
             HeartBeatRequest request;
             HeartBeatReply reply;
 
@@ -142,7 +153,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
                 if(!stream->Read(&request)) {
                     break;
                 }
-                cout << "[INFO]: recv heartbeat from IP:[" << request.ip() <<  "]" << endl;
+                dbgprintf("[INFO]: recv heartbeat from IP:[%s]\n", request.ip().c_str());
 
                 identity = Identity_Name(request.identity());
 
@@ -157,7 +168,7 @@ class LBNodeCommService final: public LBNodeComm::Service {
                     
                     register_node(identity, request.ip());
                 } else {
-                    cout << "[INFO]: not registering again" << endl;
+                    dbgprintf("[INFO]: not registering again\n");
                 }
 
                 prev_identity = identity;
@@ -173,10 +184,11 @@ class LBNodeCommService final: public LBNodeComm::Service {
                 if(!stream->Write(reply)) {
                     break;
                 }
-                cout << "[INFO]: sent heartbeat reply" << endl;
+                dbgprintf("[INFO]: sent heartbeat reply\n");
             }
 
             cout << "[ERROR]: stream broke" << endl;
+            dbgprintf("[ERROR]: stream broke\n");
             erase_node(identity);
 
             return Status::OK;
@@ -225,6 +237,9 @@ void* RunServerForNodes(void* arg) {
   return NULL;
 }
 
+/******************************************************************************
+ * DRIVER
+ *****************************************************************************/
 int main(){
     pthread_t client_server_t, node_server_t;
   

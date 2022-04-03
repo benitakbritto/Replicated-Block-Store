@@ -18,8 +18,9 @@ using blockstorage::WriteRequest;
 
 using namespace std;
 
-uint64_t DIR_SIZE = 107374182;
+uint64_t DIR_SIZE = 256*1024;
 uint64_t FILE_SIZE = 4096;
+int MAX_REQUESTS_PER_WORKER = 128;
 
 BlockStorageClient *blockstorageClient;
 
@@ -55,7 +56,7 @@ void warmup() {
 }
 
 void ping() {
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 2; i++) {
         blockstorageClient->Ping();
     }
 }
@@ -76,7 +77,7 @@ uint64_t read_worker(int start_addr, int jump, int num_requests, int id) {
         Status readStatus = blockstorageClient->Read(request, &reply, addr);
     
         if (readStatus.error_code() != grpc::StatusCode::OK) {
-            // cout << "Read test failed" << endl;
+            cout << "Read test failed" << endl;
         }
 
         auto end = chrono::high_resolution_clock::now();
@@ -111,68 +112,198 @@ uint64_t exec_reads(int N_workers, int num_requests, int jump_within_worker, int
 }
 
 void read_performance() {
-    int workers = 1;
+    int workers = 4;
 
     // 1 - read aligned wrt number of requests
-    for(int num_request = 1; num_request <= 1024; num_request*=2) {
+    cout << "[Metrics_START:READ_ALIGNED]" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
         uint64_t time_taken = exec_reads(workers, num_request, 0, FILE_SIZE);
-        cout << "[num_requests:" << num_request*workers << "]:[time_taken:" << time_taken/1e6 << " ms]" << endl;
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
+    cout << "[Metrics_END:READ_ALIGNED]" << endl;
 
     // 2 - read non-aligned wrt number of requests
-    for(int num_request = 1; num_request <= 1024; num_request*=2) {
+    cout << "[Metrics_START:READ_NON_ALIGNED]" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
         uint64_t time_taken = exec_reads(workers, num_request, 2048, FILE_SIZE);
-        cout << "[num_requests:" << num_request*workers << "]:[time_taken:" << time_taken/1e6 << " ms]" << endl;
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
+    cout << "[Metrics_END:READ_NON_ALIGNED]" << endl;
 }
 
-void pause_thread(int n, int id) {
-    std::this_thread::sleep_for (std::chrono::seconds(n));
-    std::cout << "ID:" << id << ", pause of " << n << " seconds ended\n";
+uint64_t write_worker(int start_addr, int jump, int num_requests, int id) {
+    uint64_t time_taken = 0;
+    string buffer(FILE_SIZE, 'w');
+    Status writeStatus;
+
+    for(int i = 0, addr = start_addr; i < num_requests; i++, addr += jump) {
+        // cout << "WORKER:" << id << " running addr:[" << addr << "]" << endl;
+        auto begin = chrono::high_resolution_clock::now();
+
+        // actual call
+        writeStatus = blockstorageClient->Write(addr, buffer);
+
+        if (writeStatus.error_code() != grpc::StatusCode::OK) {
+            cout << "Write test failed" << endl;
+        }
+
+        auto end = chrono::high_resolution_clock::now();
+        time_taken += chrono::duration_cast<chrono::nanoseconds> (end - begin).count();
+    }
+
+    return time_taken;
 }
 
-int pause_thread2(int n, int id) {
-    std::this_thread::sleep_for (std::chrono::seconds(n));
-    std::cout << "ID:" << id << ", pause of " << n << " seconds ended\n";
-    return id;
+uint64_t exec_writes(int N_workers, int num_requests, int jump_within_worker, int start_addr) {
+    // stores start addrs for each worker
+    uint64_t start_addrs[N_workers];
+    future<uint64_t> workers[N_workers];
+    uint64_t time_taken = 0;
+
+    // prepare all addresses
+    for(int addr = start_addr, i = 0; i < N_workers; i++, addr += DIR_SIZE) {
+        start_addrs[i] = addr;
+    }
+
+    // start all workers by passing necessary instructions
+    for (int i = 0; i < N_workers; i++) {
+        workers[i] = async(read_worker, start_addrs[i], jump_within_worker, num_requests, i); 
+    }
+
+    // wait for them to finish
+    for(int i = 0; i < N_workers; i++) {
+        time_taken += workers[i].get();
+    }
+
+    return time_taken;
 }
 
-void sample() {
-    std::thread threads[5];                         // default-constructed threads
+void write_performance() {
+    int workers = 4;
 
-    std::cout << "Spawning 5 threads...\n";
-    for (int i=0; i<5; ++i)
-        threads[i] = std::thread(pause_thread, i+1, i + 1);   // move-assign threads
+    // 1 - read aligned wrt number of requests
+    cout << "[Metrics_START:WRITE_ALIGNED]" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
+        uint64_t time_taken = exec_reads(workers, num_request, 0, FILE_SIZE);
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:WRITE_ALIGNED]" << endl;
 
-    std::cout << "Done spawning threads. Now waiting for them to join:\n";
-    for (int i=0; i<5; ++i)
-        threads[i].join();
-
-    std::cout << "All threads joined!\n";
+    // 2 - read non-aligned wrt number of requests
+    cout << "[Metrics_START:WRITE_NON_ALIGNED]" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
+        uint64_t time_taken = exec_reads(workers, num_request, 2048, FILE_SIZE);
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:WRITE_NON_ALIGNED]" << endl;
 }
 
-void sample2() {
-    future<int> ret = async(pause_thread2, 0, 2);
-    int i = ret.get();
+void write_congestion() {
+    int worker_limit = 8;
+
+    cout << "[Metrics_START:WRITE_ALIGNED_CONGESTION]" << endl;
+    cout << "workers,time(in ms)" << endl;
+    for(int num_worker = 1; num_worker <= worker_limit; num_worker++) {
+        future<uint64_t> workers[num_worker];
+        uint64_t time_taken = 0;
+
+        for(int i = 0; i < num_worker; i++) {
+            workers[i] = async(write_worker, 0, 0, 1, i); 
+
+        }
+        for (int i = 0; i < num_worker; i++) {
+            time_taken += workers[i].get();
+        }
+
+        cout << num_worker << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:WRITE_ALIGNED_CONGESTION]" << endl;
+
+    cout << "[Metrics_START:WRITE_NON_ALIGNED_CONGESTION]" << endl;
+    cout << "workers,time(in ms)" << endl;
+    int start_addr = FILE_SIZE/2;
+    for(int num_worker = 1; num_worker <= worker_limit; num_worker++) {
+        future<uint64_t> workers[num_worker];
+        uint64_t time_taken = 0;
+
+        for(int i = 0; i < num_worker; i++) {
+            workers[i] = async(write_worker, start_addr, 0, 1, i); 
+
+        }
+        for (int i = 0; i < num_worker; i++) {
+            time_taken += workers[i].get();
+        }
+
+        cout << num_worker << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:WRITE_NON_ALIGNED_CONGESTION]" << endl;
+}
+
+void read_congestion() {
+    int worker_limit = 8;
+
+    cout << "[Metrics_START:READ_ALIGNED_CONGESTION]" << endl;
+    cout << "workers,time(in ms)" << endl;
+    for(int num_worker = 1; num_worker <= worker_limit; num_worker++) {
+        future<uint64_t> workers[num_worker];
+        uint64_t time_taken = 0;
+
+        for(int i = 0; i < num_worker; i++) {
+            workers[i] = async(read_worker, 0, 0, 1, i); 
+
+        }
+        for (int i = 0; i < num_worker; i++) {
+            time_taken += workers[i].get();
+        }
+
+        cout << num_worker << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:READ_ALIGNED_CONGESTION]" << endl;
+
+    cout << "[Metrics_START:READ_NON_ALIGNED_CONGESTION]" << endl;
+    cout << "workers,time(in ms)" << endl;
+    int start_addr = FILE_SIZE/2;
+    for(int num_worker = 1; num_worker <= worker_limit; num_worker++) {
+        future<uint64_t> workers[num_worker];
+        uint64_t time_taken = 0;
+
+        for(int i = 0; i < num_worker; i++) {
+            workers[i] = async(read_worker, start_addr, 0, 1, i); 
+
+        }
+        for (int i = 0; i < num_worker; i++) {
+            time_taken += workers[i].get();
+        }
+
+        cout << num_worker << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:READ_NON_ALIGNED_CONGESTION]" << endl;
 }
 
 // Usage: ./rw_perf 1 - just for warmup - no actual perf done
 // Usage: ./rw_perf 0 - just actual perf
 int main(int argc, char** argv) {
     blockstorageClient = new BlockStorageClient(grpc::CreateChannel("0.0.0.0:50051", grpc::InsecureChannelCredentials()));
+    string arg(argv[1]);
+
+    if (arg.compare("1") == 0) {
+        write_performance();
+    } else if (arg.compare("2") == 0) {
+        read_performance();
+    } else if (arg.compare("3") == 0) {
+        write_congestion();
+    } else if (arg.compare("4") == 0) {
+        read_congestion();
+    } else if (arg.compare("5") == 0) {
+        write_performance();
+        read_performance();
+        write_congestion();
+        read_congestion();
+    } 
     
-    string ping_arg(argv[1]);
-    if (ping_arg.compare("1") == 0) {
-        cout << "Warming up" << endl;
-        ping();
-        cout << "WARM up done" << endl;
-        return 0;    
-    } else {
-        cout << "not warming up" << endl;
-    }
-    
-    read_performance();
-    // sample();
-    // sample2();
     return 0;
 }

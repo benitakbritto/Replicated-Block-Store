@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include "util/common.h"
 #include <grpcpp/grpcpp.h>
 #ifdef BAZEL_BUILD
 #include "examples/protos/blockstorage.grpc.pb.h"

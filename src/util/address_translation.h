@@ -5,6 +5,7 @@
 #include <vector>
 #include <exception>
 #include <string>
+#include "common.h"
 
 /******************************************************************************
  * MACROS
@@ -14,8 +15,6 @@
 #define PARTITION_SIZE              1048576     
 #define MAX_FILES_IN_DIR            256
 #define MAX_DIR                     1024   
-#define DEBUG                       1                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 #define SERVER_STORAGE_PATH         "/home/benitakbritto/CS-739-P3/storage/"
 
 /******************************************************************************
@@ -40,10 +39,11 @@ struct PathData
             {}
 };
 
-
+/******************************************************************************
+ * DECLARATION
+ *****************************************************************************/
 class AddressTranslation  
 {
-
 private:
     bool IsValidAddress(int address);
     string GetDirectory(int address);

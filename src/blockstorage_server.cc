@@ -29,9 +29,10 @@
 #include "util/locks.h"
 #include "util/state.h"
 #include "util/cache.h"
+#include "util/common.h"
 
 /******************************************************************************
- * NAMESPACE
+ * NAMESPACES
  *****************************************************************************/
 using grpc::Channel;
 using grpc::ClientContext;
@@ -58,8 +59,6 @@ using namespace std;
 #define LEVEL_O_COUNT 1024
 #define LEVEL_1_COUNT 256
 
-#define DEBUG                       1                     
-#define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
 /*****************************************************************************
  * GLOBALS
  *****************************************************************************/
@@ -77,20 +76,20 @@ unordered_map<string, string> addrToContentCache;
 // stores the information about the txn
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
 volatile map<string, Txn> txn_map;
-
 // use this to block all writes during syncing backups
 sem_t global_write_lock;
-
 // TODO:: make this atomic counter to count the number of writes in flight
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
-
+int HB_SLEEP_IN_SEC = 5;
 string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
-
 string self_addr_lb;
 string lb_addr;
 
+/******************************************************************************
+ * DECLARATION - Helper
+ *****************************************************************************/
 class Helper {
   public:
 
@@ -107,7 +106,7 @@ class Helper {
     int fd_original = open(original_path.c_str(), O_RDONLY);
     if (fd_original == -1)
     {
-      cout<<"ERR: server open local failed"<<__func__<<endl;
+      dbgprintf("[ERR] WriteToTempFile: server open local failed\n");
       perror(strerror(errno));
       return errno;
     }
@@ -115,7 +114,7 @@ class Helper {
     int fd_tmp = open(temp_path.c_str(), O_CREAT | O_WRONLY , 0777);
     if (fd_tmp == -1)
     {
-      cout<<"ERR: server open local failed"<<__func__<<endl;
+      dbgprintf("[ERR] WriteToTempFile: server open local failed\n");
       perror(strerror(errno));
       return errno;
     }
@@ -128,7 +127,7 @@ class Helper {
     // dbgprintf("[INFO] WriteToTempFile: original_content = %s\n", original_content);
     if (read_rc == -1)
     {
-      cout<<"ERR: read local failed in "<<__func__<<endl;
+      dbgprintf("[ERR] WriteToTempFile: read local failed\n");
       perror(strerror(errno));
       return errno;
     }
@@ -138,7 +137,7 @@ class Helper {
     // dbgprintf("[INFO] WriteToTempFile: write_rc = %d\n", write_rc);
     if (write_rc == -1)
     {
-      cout<<"[ERR] WriteToTempFile: write local failed" << endl;
+      dbgprintf("[ERR] WriteToTempFile: write local failed\n");
       perror(strerror(errno));
       return errno;
     }
@@ -146,7 +145,7 @@ class Helper {
     int pwrite_rc = pwrite(fd_tmp, buffer, size, offset);
     dbgprintf("[INFO] WriteToTempFile: pwrite_rc = %d\n", pwrite_rc);
     if(pwrite_rc == -1){
-      cout<<"[ERR] WriteToTempFile: pwrite local failed" << endl;
+      dbgprintf("[ERR] WriteToTempFile: pwrite local failed\n");
       perror(strerror(errno));
       return errno;
     }
@@ -216,9 +215,9 @@ class Helper {
   }
 };
 
-/*
-* For Backup
-*/
+/******************************************************************************
+ * DECLARATION - COMMUNICATE TO OTHER SERVER
+ *****************************************************************************/
 class ServiceCommImpl final: public ServiceComm::Service {
   Helper helper;
 
@@ -364,12 +363,10 @@ class ServiceCommImpl final: public ServiceComm::Service {
 
     while (stream->Read(&request)) {
         SyncRequest_Commands command = request.command();
-        #ifdef DEBUG
-          cout << "[INFO] Sync: Recv sync request from [IP:]" << request.ip() << ",[CMD:]" << SyncRequest_Commands_Name(command) << endl;
-        #endif
+        dbgprintf("[INFO] Sync: Recv sync request from [IP:] %s ,[CMD:] %s\n", request.ip().c_str(), SyncRequest_Commands_Name(command).c_str());
 
         if (SyncRequest_Commands_STOP_WRITE == command) {
-          cout << "[INFO] Sync: acquiring the global write lock" << endl;
+          dbgprintf("[INFO] Sync: acquiring the global write lock\n");
           sem_wait(&global_write_lock);
 
           SyncReply reply;
@@ -390,11 +387,11 @@ class ServiceCommImpl final: public ServiceComm::Service {
             // Step - 1: Send Ops
             reply.set_error(i);
             stream->Write(reply);
-            cout << "[INFO] Sync: sent txn num:" << reply.error() << endl;
+            dbgprintf("[INFO] Sync: sent txn num: %d\n", reply.error());
             
             // Step - 2: Wait for the ack and then do some bookkeeping 
             stream->Read(&request);
-            cout << "[INFO] Sync: got ack" << endl;
+            dbgprintf("[INFO] Sync: got ack\n");
 
             // Step - 2.1: book keeping
           }
@@ -402,14 +399,14 @@ class ServiceCommImpl final: public ServiceComm::Service {
           goto RELEASE_GLOBAL_LOCK;
           
         } else {
-            cout << "[ERROR] Sync: Unknown command" << endl;
+            dbgprintf("[ERROR] Sync: Unknown command\n");
             break;
         }
         
     }
 
     RELEASE_GLOBAL_LOCK: 
-    cout << "[INFO] Sync: releasing the global write lock" << endl;
+    dbgprintf("INFO] Sync: releasing the global write lock\n");
     sem_post(&global_write_lock);
 
     return Status::OK;
@@ -424,7 +421,9 @@ class ServiceCommImpl final: public ServiceComm::Service {
   }
 };
 
-// Logic and buffer behind the server's behavior.
+/******************************************************************************
+ * DECLARATION - MAIN SERVER
+ *****************************************************************************/
 class BlockStorageServiceImpl final : public BlockStorage::Service {
 private:
   Helper helper;
@@ -471,7 +470,7 @@ public:
       dbgprintf("[INFO] Read: pd.path = %s\n", pd.path.c_str());
       int fd = open(pd.path.c_str(), O_RDONLY);
       if (fd == -1){
-         cout << "[ERR] Read: open failed" << endl;
+        dbgprintf("[ERR] Read: open failed\n");
         reply->set_error(errno);
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to get fd\n");
       }
@@ -479,15 +478,15 @@ public:
       char *buf = new char[pd.size+1];
       memset(buf, '\0', pd.size+1);
       
-      cout << "[INFO]: Read: Acquiring file read lock" << endl;
+      dbgprintf("[INFO]: Read: Acquiring file read lock\n");
       std::shared_lock<std::shared_mutex> readLock = mutexMap.GetReadLock(pd.path.c_str());
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
       mutexMap.ReleaseReadLock(readLock);
-      cout << "[INFO]: Read: Releasing file read lock" << endl;
+      dbgprintf("[INFO]: Read: Releasing file read lock\n");
 
       dbgprintf("[INFO] Read: bytesRead = %d, starting at offset=%d, size=%d\n", bytesRead, pd.offset, pd.size);
       if (bytesRead == -1){
-        cout << "[ERR] Read: pread failed" << endl;
+        dbgprintf("[ERR] Read: pread failed\n");
         reply->set_error(errno);
         perror(strerror(errno));
         close(fd);
@@ -552,19 +551,17 @@ public:
 
       rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
-      cout << "[INFO]: acquiring the write lock" << endl;
+      dbgprintf("[INFO]: acquiring the write lock\n");
       writeLockForFile = mutexMap.GetWriteLock(original_path);
 
       int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
       dbgprintf("[INFO] Write: writeResp = %d\n", writeResp);
       if (writeResp != 0) {
-        #ifdef INFO
-          cout << "[ERR] Write: WriteToTempFile failed" << endl;
-        #endif
+        dbgprintf("[ERR] Write: WriteToTempFile failed\n");
         reply->set_error(errno);
         perror(strerror(errno));
 
-        cout << "[INFO]: Releasing the write lock" << endl;
+        dbgprintf("[INFO]: Releasing the write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
 
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // TODO: set correct status code
@@ -614,7 +611,7 @@ public:
         // 7.2 Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
         
-        cout << "[INFO]: Write: releasing the file write lock" << endl;
+        dbgprintf("[INFO]: releasing the file write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
 
         cout << "[INFO]: Write: updating cache " << endl;
@@ -642,7 +639,7 @@ public:
         // Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
         // TODO: Undo changes
-        cout << "[INFO]: releasing the file write lock" << endl;
+        dbgprintf("[INFO]: releasing the file write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
         // Return failure
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
@@ -673,13 +670,13 @@ public:
         // 6.2 Remove from KV
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
         // TODO: Delete temp and undo files
-        cout << "[INFO]: releasing the file write lock" << endl;
+        dbgprintf("[INFO]: releasing the file write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
         // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
     }
-    cout << "[INFO]: WRITE: releasing the file write lock" << endl;
+    dbgprintf("INFO]: WRITE: releasing the file write lock\n");
     mutexMap.ReleaseWriteLock(writeLockForFile);
 
     cout << "[INFO]: Write: updating cache " << endl;
@@ -735,18 +732,14 @@ public:
   
 };
 
+
 void PrepareStorage() {
-  
-  #ifdef INFO
-    cout << "[INFO] Preparing Storage Path" << endl;
-  #endif
+  dbgprintf("[INFO] Preparing Storage Path\n");
 
   int res = mkdir(SERVER_STORAGE_PATH, 0777);
 
   if (res == -1 && errno == EEXIST) {
-    // #ifdef WARN
-    //   cout << "[WARN] Server storage dir:" << SERVER_STORAGE_PATH << " already exists." << endl;
-    // #endif
+    // dbprintf("[WARN] Server storage dir: %s already exists\n", SERVER_STORAGE_PATH);
   }
 
   for(int dirId = 0; dirId < LEVEL_O_COUNT; dirId++) {
@@ -757,9 +750,7 @@ void PrepareStorage() {
     res = mkdir(dir.c_str(), 0777);
 
     if (res == -1 && errno == EEXIST) {
-      // #ifdef WARN
-      //   cout << "[WARN] Dir:" << dir << " already exists." << endl;
-      // #endif
+      // dbprintf("[WARN] Dir: %s already exists\n", dir.c_str());
     }
 
     for(int fileId = 0; fileId < LEVEL_1_COUNT; fileId++) {
@@ -768,13 +759,10 @@ void PrepareStorage() {
       res = open(file.c_str(), O_CREAT | O_EXCL, 0777);
 
       if (res == -1 && errno == EEXIST) {
-        // #ifdef WARN
-        //   cout << "[WARN] File:" << file << " already exists." << endl;
-        // #endif
+        // dbprintf("[WARN] File: %s already exists\n", file.c_str());
       }
     }
   }
-
 }
 
 string convert_to_local_addr(string addr) {
@@ -832,6 +820,9 @@ void *RunCommServer(void* _self_addr_peer) {
   return NULL;
 }
 
+/******************************************************************************
+ * DECLARATION - RECOVERY part 2
+ *****************************************************************************/
 class ServiceCommClient {
 private:
       unique_ptr<ServiceComm::Stub> stub_;
@@ -848,10 +839,10 @@ public:
           request.set_command(SyncRequest_Commands_STOP_WRITE);
           
           stream->Write(request);
-          cout << "[INFO] stop_writes: sent SyncRequest_Commands_STOP_WRITE request to Primary" << endl;
+          dbgprintf("[INFO] stop_writes: sent SyncRequest_Commands_STOP_WRITE request to Primary\n");
           
           stream->Read(&reply);
-          cout << "[INFO] stop_writes: recv from primary:" << reply.error() << endl;
+          dbgprintf("[INFO] stop_writes: recv from primary: %d\n", reply.error());
       }
 
       int wait(std::shared_ptr<ClientReaderWriter<SyncRequest, SyncReply> > stream) {
@@ -863,15 +854,13 @@ public:
 
           while(1) {
             stream->Write(request);
-            cout << "[INFO] stop_writes: sent SyncRequest_Commands_WRITES_STATUS request to Primary" << endl;
-            
+            dbgprintf("[INFO] wait: sent SyncRequest_Commands_WRITES_STATUS request to Primary\n");
             stream->Read(&reply);
 
             int inflight_writes = reply.inflight_writes();
             int pending_writes = reply.pending_writes();
 
-            cout << "[INFO] stop_writes: recv from primary:" << pending_writes  << "," << inflight_writes << endl;
-
+            dbgprintf("[INFO] wait: recv from primary: %d, %d\n", pending_writes, inflight_writes);
             if (inflight_writes == 0) {
               return pending_writes; 
             }
@@ -887,16 +876,15 @@ public:
 
         
         stream->Write(request);
-        cout << "[INFO] commit_txns: sent SyncRequest_Commands_WRITES_STATUS request to Primary" << endl;
-
+        dbgprintf("[INFO] commit_txns: sent SyncRequest_Commands_WRITES_STATUS request to Primary\n");
         request.set_command(SyncRequest_Commands_ACK_PREV);
 
         for(int i = 0; i < txn_count; i++) {
             stream->Read(&reply);
-            cout << "[INFO] commit_txns: recv reply for packet number- " << reply.error() << endl;
+            dbgprintf("[INFO] commit_txns: recv reply for packet number-  %d\n", reply.error());
             
             stream->Write(request);
-            cout << "[INFO] commit_txns: sent ack for packet number - " << reply.error() << endl;
+            dbgprintf("[INFO] commit_txns: sent ack for packet number-  %d\n", reply.error());
         }
         
         return true;
@@ -914,7 +902,7 @@ public:
         // step - 2: get the status of writes
         int txn_count = wait(stream);
 
-        cout << "[INFO] Sync: starting syncing for txns:" << txn_count << endl;
+        dbgprintf("INFO] Sync: starting syncing for txns: %d\n", txn_count);
         // step - 3: get all writes
         bool txn_status = commit_txns(stream, txn_count);
 
@@ -922,13 +910,16 @@ public:
         Status status = stream->Finish();
 
         if (!status.ok()) {
-          cout << "[ERR] Sync: SYNC failed." << endl;
+          dbgprintf("ERR] Sync: SYNC failed.\n");
         } else {
-          cout << "[INFO] Sync: SYNC worked" << endl;
+          dbgprintf("[INFO] Sync: SYNC worked\n");
         }
       }
 };
 
+/******************************************************************************
+ * DECLARATION - LOAD BALANCER COMMUNICATION
+ *****************************************************************************/
 class LBNodeCommClient {
 private:
     unique_ptr<LBNodeComm::Stub> stub_;
@@ -955,20 +946,19 @@ public:
         while(1) {
           request.set_identity(identity);
           stream->Write(request);
-          cout << "[INFO] SendHeartBeat: sent heartbeat" << endl;
+          dbgprintf("INFO] SendHeartBeat: sent heartbeat\n");
 
           stream->Read(&reply);
-          cout << "[INFO] SendHeartBeat: recv heartbeat response" << endl;
-          cout << "[INFO] SendHeartBeat: has peer ? " << reply.has_peer_ip() << endl;
+          dbgprintf("[INFO] SendHeartBeat: recv heartbeat response\n");
+          dbgprintf("[INFO] SendHeartBeat: has peer ? %d\n", reply.has_peer_ip());
 
           if (identity == BACKUP && !reply.has_peer_ip()) {
             cout << "[INFO] SendHeartBeat: FAILOVER" << endl;
             identity = PRIMARY;
           }
 
-          cout << "[INFO] SendHeartBeat: sleeping for 3 sec" << endl;
-
-          sleep(3);
+          dbgprintf("[INFO] SendHeartBeat: sleeping for 3 sec\n");
+          sleep(HB_SLEEP_IN_SEC);
         }
     }
 };
@@ -984,7 +974,7 @@ void *Test(void* arg) {
 void *StartHB(void* _identity) {
   string identity_str((char*)_identity);
 
-  cout << "[INFO] StartHB: starting as:" << identity_str << endl;
+  cout << "[INFO] StartHB: starting as: " << identity_str << endl;
 
   Identity identity_enum = PRIMARY;
 
@@ -998,11 +988,14 @@ void *StartHB(void* _identity) {
   return NULL;
 }
 
+/******************************************************************************
+ * DRIVER
+ *****************************************************************************/
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr] 
 // ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:70053 20.124.236.11:50056 //hemal
 // e.g ./blockstorage_server PRIMARY 52.151.53.152:40051 0.0.0.0:60052 20.109.180.121:60053 52.151.53.152:50056 //reetu
 // e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 52.151.53.152:60052 52.151.53.152:50056
-
+// e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.228.235.42:60052 20.228.235.42:50056
 int main(int argc, char** argv) {
   self_addr_lb = string(argv[2]);
   lb_addr = string(argv[5]);

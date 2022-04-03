@@ -76,6 +76,7 @@ sem_t global_write_lock;
 // TODO:: make this atomic counter to count the number of writes in flight
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
+int HB_SLEEP_IN_SEC = 5;
 string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
 string self_addr_lb;
@@ -928,7 +929,7 @@ public:
           }
 
           dbgprintf("[INFO] SendHeartBeat: sleeping for 3 sec\n");
-          sleep(3);
+          sleep(HB_SLEEP_IN_SEC);
         }
     }
 };

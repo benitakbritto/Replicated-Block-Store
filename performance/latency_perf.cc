@@ -30,7 +30,7 @@ BlockStorageClient *blockstorageClient;
  * MACROS
  *****************************************************************************/
 #define BLOCK_SIZE          4096
-#define LOAD_BALANCER_ADDR  "0.0.0.0:50051"
+#define LOAD_BALANCER_ADDR  "20.228.235.42:50051"
 
 /******************************************************************************
  * NAMESPACES
@@ -97,7 +97,9 @@ int main(int argc, char** argv)
     switch(test)
     {
         case READ:
+            cout << "Testing read" << endl;
             read_test(start_addr, jump, limit, iterations);
+            cout << "Read done" << endl;
             break;
         case WRITE:
             write_test(start_addr, jump, limit, iterations);
@@ -112,6 +114,7 @@ int main(int argc, char** argv)
 /******************************************************************************
  * DEFINITIONS
  *****************************************************************************/
+// TODO: Change to rw_perf warmup
 void warmup()
 {
     string buffer(5, 'w');
@@ -131,7 +134,7 @@ void read_test(int start_addr, int jump, int limit, int iterations)
     ReadRequest request;
     ReadReply reply;
 
-    warmup();
+    // warmup();
     
     for (int i = 0; i < limit; i++)
     {
@@ -161,7 +164,7 @@ void write_test(int start_addr, int jump, int limit, int iterations)
     string letter = "A";
     string buffer = generate_str(letter);
 
-    warmup();
+    // warmup();
 
     for (int i = 0; i < limit; i++)
     {
@@ -183,10 +186,10 @@ void write_test(int start_addr, int jump, int limit, int iterations)
 
 void print_time(string metric, int addr, int iteration_num, nanoseconds elapsed_time)
 {
-    cout << "[Metric:" << metric <<":]"
-        << "[Address:" << addr << ":]"
-        << "[Iteration:" << iteration_num << ":]"
-        << "[Elapsed Time:" << elapsed_time.count() << ":]"
+    cout << "[Metric:" << metric <<"]"
+        << "[Address:" << addr << "]"
+        << "[Iteration:" << iteration_num << "]"
+        << "[Elapsed Time:" << (elapsed_time.count() / 1e6) << "ms]"
         << endl;
 }
 

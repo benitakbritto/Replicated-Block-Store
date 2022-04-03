@@ -80,6 +80,13 @@ class BlockStorageService final : public BlockStorage::Service {
             dbgprintf("reached LB write \n");
             return (*bs_clients)[PRIMARY_STR]->Write(request->addr(), request->buffer());
         }
+
+         Status Ping(ServerContext* context, const PingRequest* request,
+                  PingReply* reply) override {
+            string key = getServerToRouteTo();
+            dbgprintf("Routing read to %s\n", key.c_str());
+            return (*bs_clients)[key]->Ping();
+        }
 };
 
 class LBNodeCommService final: public LBNodeComm::Service {

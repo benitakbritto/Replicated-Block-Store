@@ -23,6 +23,8 @@ using blockstorage::ReadReply;
 using blockstorage::ReadRequest;
 using blockstorage::WriteReply;
 using blockstorage::WriteRequest;
+using blockstorage::PingRequest;
+using blockstorage::PingReply;
 using namespace std;
 
 class BlockStorageClient  
@@ -38,6 +40,7 @@ public:
     void Connect(string target);
     Status Write(int address, string buf);
     Status Read(ReadRequest request, ReadReply* reply,int address);
+    Status Ping(); 
 };
 
 #endif

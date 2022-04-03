@@ -77,6 +77,8 @@ sem_t global_write_lock;
 // then just do normal ++ and -- operations
 int writes_in_flight = 0;
 
+int HB_SLEEP_IN_SEC = 5;
+
 string PRIMARY_STR("PRIMARY");
 string BACKUP_STR("BACKUP");
 
@@ -876,9 +878,7 @@ public:
             identity = PRIMARY;
           }
 
-          cout << "[INFO] SendHeartBeat: sleeping for 3 sec" << endl;
-
-          sleep(3);
+          sleep(HB_SLEEP_IN_SEC);
         }
     }
 };

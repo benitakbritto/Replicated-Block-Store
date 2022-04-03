@@ -18,7 +18,7 @@ using blockstorage::WriteRequest;
 
 using namespace std;
 
-uint64_t DIR_SIZE = 107374182;
+uint64_t DIR_SIZE = 256*1024;
 uint64_t FILE_SIZE = 4096;
 
 BlockStorageClient *blockstorageClient;
@@ -55,7 +55,7 @@ void warmup() {
 }
 
 void ping() {
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 2; i++) {
         blockstorageClient->Ping();
     }
 }
@@ -111,19 +111,25 @@ uint64_t exec_reads(int N_workers, int num_requests, int jump_within_worker, int
 }
 
 void read_performance() {
-    int workers = 1;
+    int workers = 4;
 
     // 1 - read aligned wrt number of requests
-    for(int num_request = 1; num_request <= 1024; num_request*=2) {
+    cout << "[Metrics:START] read aligned wrt number of requests" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= 64; num_request*=2) {
         uint64_t time_taken = exec_reads(workers, num_request, 0, FILE_SIZE);
-        cout << "[num_requests:" << num_request*workers << "]:[time_taken:" << time_taken/1e6 << " ms]" << endl;
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
+    cout << "[Metrics:END] read aligned wrt number of requests" << endl;
 
     // 2 - read non-aligned wrt number of requests
-    for(int num_request = 1; num_request <= 1024; num_request*=2) {
+    cout << "[Metrics:START] read non-aligned wrt number of requests" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= 64; num_request*=2) {
         uint64_t time_taken = exec_reads(workers, num_request, 2048, FILE_SIZE);
-        cout << "[num_requests:" << num_request*workers << "]:[time_taken:" << time_taken/1e6 << " ms]" << endl;
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
+    cout << "[Metrics:END] read non-aligned wrt number of requests" << endl;
 }
 
 void pause_thread(int n, int id) {

@@ -84,7 +84,7 @@ class BlockStorageService final : public BlockStorage::Service {
          Status Ping(ServerContext* context, const PingRequest* request,
                   PingReply* reply) override {
             string key = getServerToRouteTo();
-            dbgprintf("Routing read to %s\n", key.c_str());
+            dbgprintf("Routing ping to %s\n", key.c_str());
             return (*bs_clients)[key]->Ping();
         }
 };

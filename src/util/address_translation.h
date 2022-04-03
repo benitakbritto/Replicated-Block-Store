@@ -16,7 +16,7 @@
 #define MAX_DIR                     1024   
 #define DEBUG                       1                     
 #define dbgprintf(...)              if (DEBUG) { printf(__VA_ARGS__); } 
-#define SERVER_STORAGE_PATH         "/home/benitakbritto/CS-739-P3/storage/"
+#define SERVER_STORAGE_PATH         "/home/hemalkumar/hemal/CS-739-P3/storage/"
 
 /******************************************************************************
  * NAMESPACES

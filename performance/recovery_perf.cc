@@ -7,13 +7,18 @@
  *  i is the iteration amount
  *  t is the test (0: READ, 1: WRITE)
  * 
- *  @prereq: Things to do before running this test
+ * @prereq: Things to do before running this test
  *  1. CLEAN self.log on PRIMARY and BACKUP
- *  2. Check Load Balancer address
+ *  2. PRIMARY up; BACKUP down
+ *  3. Check Load Balancer address
+ *  4. TIMER_ON = 1 in util/crash_recovery.h
+ * 
+ * @after: Things to do after executing this 
+ *  1. Run BACKUP
+ *  2. Redirect BACKUP output to a file -- This will be used to generate graphs
  *****************************************************************************/
 
 #include <iostream>
-#include <chrono>
 #include "../src/client.h"
 #include <memory>
 #include <string>
@@ -23,11 +28,6 @@
 /******************************************************************************
  * GLOBALS
  *****************************************************************************/
-enum Test
-{
-    READ,
-    WRITE,
-};
 BlockStorageClient *blockstorageClient;
 
 /******************************************************************************
@@ -54,9 +54,7 @@ using blockstorage::WriteRequest;
  * PROTOTYPES
  *****************************************************************************/
 void warmup();
-void read_test(int start_addr, int jump, int limit, int iterations);
-void write_test(int start_addr, int jump, int limit, int iterations);
-void print_time(string metric, int addr, int iteration_num, nanoseconds elapsed_time);
+void exec_write(int start_addr, int jump, int limit, int iterations);
 string generate_str(string letter);
 
 /******************************************************************************
@@ -70,11 +68,10 @@ int main(int argc, char** argv)
     int jump = 0;
     int limit = 0;
     int iterations = 0;
-    int test = 0;
     char c = '\0';
 
-    // Get command line args
-    while ((c = getopt(argc, argv, "a:j:l:i:t:")) != -1)
+    // Parse Command line
+    while ((c = getopt(argc, argv, "a:j:l:i:")) != -1)
     {
         switch (c)
         {
@@ -90,80 +87,16 @@ int main(int argc, char** argv)
             case 'i':
                 iterations = stoi(optarg);
                 break;
-            case 't':
-                test = stoi(optarg);
-            default:
-                cout << "Invalid arg" << endl;
-                return -1;
         }
     }
 
-
     // Run test
-    switch(test)
-    {
-        case READ:
-            read_test(start_addr, jump, limit, iterations);
-            break;
-        case WRITE:
-            write_test(start_addr, jump, limit, iterations);
-            break;
-        default:
-            cout << "Invalid test" << endl;
-            return -1;
-    }
+    exec_write(start_addr, jump, limit, iterations);
 
     return 0;
 }
 
-/******************************************************************************
- * DEFINITIONS
- *****************************************************************************/
-// TODO: Change to rw_perf warmup
-void warmup()
-{
-    string buffer(5, 'w');
-    int address = 0;
-
-    Status writeStatus = blockstorageClient->Write(address, buffer);
-    
-    ReadRequest request;
-    ReadReply reply;
-    request.set_addr(address);
-    Status readStatus = blockstorageClient->Read(request, &reply, address);
-}
-
-void read_test(int start_addr, int jump, int limit, int iterations)
-{
-    int addr = 0;
-    ReadRequest request;
-    ReadReply reply;
-
-    // warmup();
-    
-    for (int i = 0; i < limit; i++)
-    {
-        int addr = start_addr + jump * i;
-        
-        cout << "ADDRESS: " << addr << endl;
-
-        for (int itr = 0; itr < iterations; itr++)
-        {
-            request.Clear();
-            reply.Clear();
-            request.set_addr(addr);
-
-            auto start = steady_clock::now();
-            Status readStatus = blockstorageClient->Read(request, &reply, addr);
-            auto end = steady_clock::now();
-            
-            nanoseconds elapsed_time = end - start;
-            print_time("Read", addr, itr, elapsed_time);
-        }
-    }
-}
-
-void write_test(int start_addr, int jump, int limit, int iterations)
+void exec_write(int start_addr, int jump, int limit, int iterations)
 {
     int addr = 0;
     string letter = "A";
@@ -179,23 +112,9 @@ void write_test(int start_addr, int jump, int limit, int iterations)
 
         for (int itr = 0; itr < iterations; itr++)
         {
-            auto start = steady_clock::now();
-            Status writeStatus = blockstorageClient->Write(addr, buffer);
-            auto end = steady_clock::now();
-            
-            nanoseconds elapsed_time = end - start;
-            print_time("Write", addr, itr, elapsed_time);
+            Status writeStatus = blockstorageClient->Write(addr, buffer);            
         }
     }
-}
-
-void print_time(string metric, int addr, int iteration_num, nanoseconds elapsed_time)
-{
-    cout << "[Metric:" << metric <<"]"
-        << "[Address:" << addr << "]"
-        << "[Iteration:" << iteration_num << "]"
-        << "[Elapsed Time:" << (elapsed_time.count() / 1e6) << "ms]"
-        << endl;
 }
 
 string generate_str(string letter)

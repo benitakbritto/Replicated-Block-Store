@@ -160,7 +160,10 @@ target_link_libraries(client_lib
 # endforeach()
 
 foreach(_target
-  rw_perf concurrent_rw latency_perf)
+  rw_perf 
+  concurrent_rw 
+  latency_perf
+  recovery_perf)
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     pthread

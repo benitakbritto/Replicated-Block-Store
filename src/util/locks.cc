@@ -16,7 +16,12 @@ std::unique_lock<shared_mutex> MutexMap::GetWriteLock(string key) {
     return unique_lock(file_mutex);
 }
 
-void MutexMap::ReleaseLock(shared_lock<shared_mutex>& file_mutex)
+void MutexMap::ReleaseReadLock(shared_lock<shared_mutex>& file_mutex)
+{
+    file_mutex.unlock();
+}
+
+void MutexMap::ReleaseWriteLock(unique_lock<shared_mutex>& file_mutex)
 {
     file_mutex.unlock();
 }

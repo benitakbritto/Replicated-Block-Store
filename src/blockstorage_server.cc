@@ -27,7 +27,7 @@
 #include "lb.grpc.pb.h"
 #include "util/crash_recovery.h"
 #include "util/locks.h"
-
+#include "util/state.h"
 /******************************************************************************
  * NAMESPACE
  *****************************************************************************/
@@ -48,6 +48,7 @@ using namespace std;
  * MACROS
  *****************************************************************************/
 #define BLOCK_SIZE 4096
+#define LOG_PATH  "/home/benitakbritto/CS-739-P3/storage/self.log"
 // Log Levels - can be simplified, but isolation gives granular control
 #define INFO
 #define WARN
@@ -66,6 +67,7 @@ map<string, TxnData> KV_STORE;
 KVStore kvObj;
 string SERVER_1;
 string SERVER_2;
+MutexMap mutexMap;
 // stores the information about the txn
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
 volatile map<string, Txn> txn_map;
@@ -176,6 +178,38 @@ class Helper {
     close(fd);
     return string(content);
   }
+
+  void writeToLog(string txnId, State state,  vector<pair<string, string>> rename_movs = vector<pair<string, string>>() ) {
+    std::unique_lock<shared_mutex> writeLockForLog = mutexMap.GetWriteLock(LOG_PATH);
+
+    switch(state) 
+    {
+      case START:
+        wal->log_prepare(txnId, rename_movs);
+        break;
+
+      case COMMIT:
+        wal->log_commit(txnId);
+        break;
+
+      case ABORT:
+        wal->log_abort(txnId);
+        break;
+
+      case PENDING_REPLICATION:
+        wal->log_pending_replication(txnId);
+        break;
+      
+      case RPC_INIT:
+        wal->log_replication_init(txnId);
+        break;
+      
+      default:
+        dbgprintf("writeToLog: Error: Invalid state\n");
+    }
+
+    mutexMap.ReleaseWriteLock(writeLockForLog);
+  }
 };
 
 /*
@@ -228,7 +262,8 @@ class ServiceCommImpl final: public ServiceComm::Service {
     }
 
     // 4.2 Write to WAL
-    wal->log_prepare(txnId, rename_movs);
+    helper.writeToLog(txnId, START, rename_movs);
+    // wal->log_prepare(txnId, rename_movs);
 
     // TODO 4.3 Create and cp undo // NOT NEEDED
 
@@ -253,7 +288,9 @@ class ServiceCommImpl final: public ServiceComm::Service {
       rename(temp_path.c_str(), original_path.c_str()); // rename temp to file
     }
     // 6.2 WAL Commit
-    wal->log_commit(txnId);
+    // wal->log_commit(txnId);
+    helper.writeToLog(txnId, COMMIT);
+
     // 6.3 Remove from KV store
     kvObj.DeleteFromKVStore(KV_STORE, txnId);
 
@@ -387,14 +424,12 @@ class ServiceCommImpl final: public ServiceComm::Service {
 class BlockStorageServiceImpl final : public BlockStorage::Service {
 private:
   Helper helper;
-  MutexMap mutexMap;
   
 public:
   std::unique_ptr<ServiceComm::Stub> _stub;
 
   BlockStorageServiceImpl(string _otherIP){
     _stub = ServiceComm::NewStub(grpc::CreateChannel(_otherIP, grpc::InsecureChannelCredentials()));
-    // mutexMap = MutexMap();
   }
 
   string CreateTransactionId()
@@ -431,11 +466,11 @@ public:
       char *buf = new char[pd.size+1];
       memset(buf, '\0', pd.size+1);
       
-      dbgprintf("[INFO] Read: Acquiring read lock");
+      cout << "[INFO]: Read: Acquiring file read lock" << endl;
       std::shared_lock<std::shared_mutex> readLock = mutexMap.GetReadLock(pd.path.c_str());
       int bytesRead = pread(fd, buf, pd.size, pd.offset);
-      readLock.unlock();
-      dbgprintf("[INFO] Read: Released read lock");
+      mutexMap.ReleaseReadLock(readLock);
+      cout << "[INFO]: Read: Releasing file read lock" << endl;
 
       dbgprintf("[INFO] Read: bytesRead = %d, starting at offset=%d, size=%d\n", bytesRead, pd.offset, pd.size);
       if (bytesRead == -1){
@@ -476,7 +511,9 @@ public:
     
     // fetch files from ATL
     pathData = atl.GetAllFileNames(address);
-    
+
+    std::unique_lock<shared_mutex> writeLockForFile;
+
     // 3.2 : create and cp tmp
     for(PathData pd : pathData) {
       dbgprintf("[INFO] Write: start = %d\n", start);
@@ -489,8 +526,12 @@ public:
       offsets.push_back(pd.offset);
       dbgprintf("[INFO] Write: original_path = %s | size = %d | offset = %d \n", original_path.c_str(), pd.size, pd.offset);
       // tmp file, orginal file
+
       rename_movs.push_back(make_pair(temp_path, original_path));
       // write to tmp file
+      cout << "[INFO]: acquiring the write lock" << endl;
+      writeLockForFile = mutexMap.GetWriteLock(original_path);
+
       int writeResp = helper.WriteToTempFile(temp_path, original_path, buffer.c_str()+start, pd.size, pd.offset);
       dbgprintf("[INFO] Write: writeResp = %d\n", writeResp);
       if (writeResp != 0) {
@@ -499,6 +540,10 @@ public:
         #endif
         reply->set_error(errno);
         perror(strerror(errno));
+
+        cout << "[INFO]: Releasing the write lock" << endl;
+        mutexMap.ReleaseWriteLock(writeLockForFile);
+
         return grpc::Status(grpc::StatusCode::NOT_FOUND, "failed to write bytes\n"); // TODO: set correct status code
       }
       start += pd.size;
@@ -507,8 +552,8 @@ public:
     }
     //  3.3 Write txn to WAL (start + mv)
     txnId = CreateTransactionId();
-    dbgprintf("[INFO] Write: txnId = %s\n", txnId.c_str());
-    wal->log_prepare(txnId, rename_movs);
+    dbgprintf("Write: txnId = %s\n", txnId.c_str());
+    helper.writeToLog(txnId, START, rename_movs);
     
     // 3.4 create and cp to undo file - TODO
 
@@ -527,7 +572,8 @@ public:
       }
       dbgprintf("[INFO] Write: rename complete\n");
       // 5.2 WAL RPCinit
-      wal->log_replication_init(txnId);
+      helper.writeToLog(txnId, RPC_INIT);
+      // wal->log_replication_init(txnId);
       
       // 5.3 Update KV store
       kvObj.UpdateStateOnKVStore(KV_STORE, txnId, RPC_INIT);
@@ -539,9 +585,15 @@ public:
       if (commitResp.error_code() == grpc::StatusCode::OK)
       {
         // 7.1 WAL commit
-        wal->log_commit(txnId);
+        helper.writeToLog(txnId, COMMIT);
+        // wal->log_commit(txnId);
+        
         // 7.2 Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
+        
+        cout << "[INFO]: releasing the file write lock" << endl;
+        mutexMap.ReleaseWriteLock(writeLockForFile);
+
         // 7.3 Respond success
         return Status::OK;
       }
@@ -554,7 +606,8 @@ public:
           rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
         }
         // 6.2 WAL "pending replication"
-        wal->log_pending_replication(txnId);
+        // wal->log_pending_replication(txnId);
+        helper.writeToLog(txnId, PENDING_REPLICATION);
         // 6.3 Update KV store "Pending on backup"
         kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
       }
@@ -564,6 +617,8 @@ public:
         // Remove from KV store
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
         // TODO: Undo changes
+        cout << "[INFO]: releasing the file write lock" << endl;
+        mutexMap.ReleaseWriteLock(writeLockForFile);
         // Return failure
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }       
@@ -579,7 +634,8 @@ public:
           rename(temp_file_pair.first.c_str(), temp_file_pair.second.c_str());
         }
         // 6.2 WAL "pending replication"
-        wal->log_pending_replication(txnId);
+        // wal->log_pending_replication(txnId);
+        helper.writeToLog(txnId, PENDING_REPLICATION);
         // 6.3 Update KV store "Pending on backup"
         kvObj.UpdateStateOnKVStore(KV_STORE, txnId, PENDING_REPLICATION);
       }
@@ -587,15 +643,21 @@ public:
       else
       {
         //  6.1 WAL Abort
-         wal->log_abort(txnId);
+        //  wal->log_abort(txnId);
+        helper.writeToLog(txnId, ABORT);
         // 6.2 Remove from KV
         kvObj.DeleteFromKVStore(KV_STORE, txnId);
         // TODO: Delete temp and undo files
+        cout << "[INFO]: releasing the file write lock" << endl;
+        mutexMap.ReleaseWriteLock(writeLockForFile);
         // 6.3 Send failure status
         return grpc::Status(grpc::StatusCode::UNKNOWN, "failed to complete write operation\n"); // TODO: Check if this status code is appropriate
       }   
     }
-    dbgprintf("[INFO] Write: Exiting function\n");
+    cout << "[INFO]: WRITE: releasing the file write lock" << endl;
+    mutexMap.ReleaseWriteLock(writeLockForFile);
+
+    dbgprintf("Write: Exiting function\n");
     return Status::OK;
   }
 
@@ -805,8 +867,6 @@ public:
             stream->Read(&reply);
             cout << "[INFO] commit_txns: recv reply for packet number- " << reply.error() << endl;
             
-            
-
             stream->Write(request);
             cout << "[INFO] commit_txns: sent ack for packet number - " << reply.error() << endl;
         }

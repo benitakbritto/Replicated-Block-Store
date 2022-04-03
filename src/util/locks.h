@@ -20,5 +20,6 @@ class MutexMap {
 
     shared_lock<shared_mutex> GetReadLock(string key);
     unique_lock<shared_mutex> GetWriteLock(string key);
-    void ReleaseLock(shared_lock<shared_mutex>& file_mutex);
+    void ReleaseReadLock(shared_lock<shared_mutex>& file_mutex);
+    void ReleaseWriteLock(unique_lock<shared_mutex>& file_mutex);
 };

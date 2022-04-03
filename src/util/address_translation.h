@@ -15,7 +15,7 @@
 #define PARTITION_SIZE              1048576     
 #define MAX_FILES_IN_DIR            256
 #define MAX_DIR                     1024   
-#define SERVER_STORAGE_PATH         "/home/benitakbritto/CS-739-P3/storage/"
+#define SERVER_STORAGE_PATH         "/home/hemalkumar/hemal/CS-739-P3/storage/"
 
 /******************************************************************************
  * NAMESPACES

@@ -18,9 +18,9 @@ using blockstorage::WriteRequest;
 
 using namespace std;
 
-uint64_t DIR_SIZE = 256*1024;
+uint64_t DIR_SIZE = 256*4096;
 uint64_t FILE_SIZE = 4096;
-int MAX_REQUESTS_PER_WORKER = 128;
+int MAX_REQUESTS_PER_WORKER = 256;
 
 BlockStorageClient *blockstorageClient;
 
@@ -95,6 +95,7 @@ uint64_t exec_reads(int N_workers, int num_requests, int jump_within_worker, int
 
     // prepare all addresses
     for(int addr = start_addr, i = 0; i < N_workers; i++, addr += DIR_SIZE) {
+        // cout << addr << endl;
         start_addrs[i] = addr;
     }
 
@@ -112,25 +113,25 @@ uint64_t exec_reads(int N_workers, int num_requests, int jump_within_worker, int
 }
 
 void read_performance() {
-    int workers = 4;
-
-    // 1 - read aligned wrt number of requests
-    cout << "[Metrics_START:READ_ALIGNED]" << endl;
-    cout << "num_requests,time(in ms)" << endl;
-    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
-        uint64_t time_taken = exec_reads(workers, num_request, 0, FILE_SIZE);
-        cout << num_request*workers << "," << time_taken/1e6 << endl;
-    }
-    cout << "[Metrics_END:READ_ALIGNED]" << endl;
+    int workers = 1;
 
     // 2 - read non-aligned wrt number of requests
     cout << "[Metrics_START:READ_NON_ALIGNED]" << endl;
     cout << "num_requests,time(in ms)" << endl;
     for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
-        uint64_t time_taken = exec_reads(workers, num_request, 2048, FILE_SIZE);
+        uint64_t time_taken = exec_reads(workers, num_request, FILE_SIZE*3, FILE_SIZE + 2048);
         cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
     cout << "[Metrics_END:READ_NON_ALIGNED]" << endl;
+
+    // 1 - read aligned wrt number of requests
+    cout << "[Metrics_START:READ_ALIGNED]" << endl;
+    cout << "num_requests,time(in ms)" << endl;
+    for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
+        uint64_t time_taken = exec_reads(workers, num_request, FILE_SIZE*3, 0);
+        cout << num_request*workers << "," << time_taken/1e6 << endl;
+    }
+    cout << "[Metrics_END:READ_ALIGNED]" << endl;
 }
 
 uint64_t write_worker(int start_addr, int jump, int num_requests, int id) {
@@ -169,7 +170,7 @@ uint64_t exec_writes(int N_workers, int num_requests, int jump_within_worker, in
 
     // start all workers by passing necessary instructions
     for (int i = 0; i < N_workers; i++) {
-        workers[i] = async(read_worker, start_addrs[i], jump_within_worker, num_requests, i); 
+        workers[i] = async(write_worker, start_addrs[i], jump_within_worker, num_requests, i); 
     }
 
     // wait for them to finish
@@ -181,25 +182,27 @@ uint64_t exec_writes(int N_workers, int num_requests, int jump_within_worker, in
 }
 
 void write_performance() {
-    int workers = 4;
+    int workers = 1;
 
-    // 1 - read aligned wrt number of requests
+     // 1 - read aligned wrt number of requests
     cout << "[Metrics_START:WRITE_ALIGNED]" << endl;
     cout << "num_requests,time(in ms)" << endl;
     for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
-        uint64_t time_taken = exec_reads(workers, num_request, 0, FILE_SIZE);
+        uint64_t time_taken = exec_writes(workers, num_request, FILE_SIZE*3, 0);
+        // uint64_t time_taken = write_worker(0, FILE_SIZE*3, num_request, );
         cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
     cout << "[Metrics_END:WRITE_ALIGNED]" << endl;
 
-    // 2 - read non-aligned wrt number of requests
+     // 2 - read non-aligned wrt number of requests
     cout << "[Metrics_START:WRITE_NON_ALIGNED]" << endl;
     cout << "num_requests,time(in ms)" << endl;
     for(int num_request = 1; num_request <= MAX_REQUESTS_PER_WORKER; num_request*=2) {
-        uint64_t time_taken = exec_reads(workers, num_request, 2048, FILE_SIZE);
+        uint64_t time_taken = exec_writes(workers, num_request, FILE_SIZE*3, FILE_SIZE + 2048);
         cout << num_request*workers << "," << time_taken/1e6 << endl;
     }
     cout << "[Metrics_END:WRITE_NON_ALIGNED]" << endl;
+
 }
 
 void write_congestion() {

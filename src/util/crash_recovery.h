@@ -12,6 +12,7 @@
 #include "common.h"
 #include <map>
 #include <fstream>
+#include <chrono>
 
 /******************************************************************************
  * NAMESPACE
@@ -30,6 +31,7 @@ using blockstorage::GetTransactionStateReply;
 using blockstorage::CommitRequest;
 using blockstorage::CommitReply;
 using grpc::ClientReader;
+using namespace chrono;
 
 /******************************************************************************
  * GLOBALS
@@ -60,7 +62,8 @@ typedef LogData Data;
  *****************************************************************************/
 #define LOG_FILE_PATH               "/home/benitakbritto/CS-739-P3/storage/self.log"
 #define DELIM                       ":"    
-#define OPERATION_MOVE              "MV"       
+#define OPERATION_MOVE              "MV"
+#define TIMER_ON                    0       
 
 class CrashRecovery
 {

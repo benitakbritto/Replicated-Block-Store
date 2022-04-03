@@ -11,6 +11,7 @@
  *  1. CLEAN self.log on PRIMARY and BACKUP
  *  2. PRIMARY up; BACKUP down
  *  3. Check Load Balancer address
+ *  4. TIMER_ON = 1 in util/crash_recovery.h
  * 
  * @after: Things to do after executing this 
  *  1. Run BACKUP

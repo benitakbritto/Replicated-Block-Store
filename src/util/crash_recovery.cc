@@ -23,6 +23,7 @@ string GetUndoFileName(string file_name);
 void WriteData(string file_path, string content, int size, int offset);
 void ApplyPendingWrites(unique_ptr<ServiceComm::Stub> &_stub);
 void Cleanup();
+void PrintTime(string metric, nanoseconds elapsed_time);
 
 // Tester
 // int main()
@@ -36,15 +37,35 @@ void Cleanup();
 int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
 {
     dbgprintf("Recover: Entering function\n");
+    
     // 1: Parse log
+    #ifndef TIMER_ON
+    auto start = steady_clock::now();
+    #endif
     LoadData();
     dbgprintf("Recover: Parsing done\n");
+    #ifndef TIMER_ON
+    auto end = steady_clock::now();
+    nanoseconds elapsed_time = end - start;
+    PrintTime("LoadData", elapsed_time);
+    #endif
 
     // 2: ApplyPendingWrites
+    #ifndef TIMER_ON
+    start = steady_clock::now();
+    #endif
     ApplyPendingWrites(_stub);
     dbgprintf("Recover: Applied pending writes done\n");
+    #ifndef TIMER_ON
+    end = steady_clock::now();
+    nanoseconds elapsed_time = end - start;
+    PrintTime("ApplyPendingWrites", elapsed_time);
+    #endif
 
-    // 3: Recover from other states    
+    // 3: Recover from other states 
+    #ifndef TIMER_ON
+    start = steady_clock::now();   
+    #endif
     for (auto it = logMap.begin(); it != logMap.end(); it++)
     {
         dbgprintf("Recover: Transation id = %s\n", it->first.c_str());
@@ -69,9 +90,22 @@ int CrashRecovery::Recover(unique_ptr<ServiceComm::Stub> &_stub)
                 return -1;
         }
     }
+    #ifndef TIMER_ON
+    end = steady_clock::now();
+    nanoseconds elapsed_time = end - start;
+    PrintTime("RecoverFromOtherStates", elapsed_time);
+    #endif
 
     // 4: Cleanup
+    #ifndef TIMER_ON
+    start = steady_clock::now();
+    #endif
     Cleanup();
+    #ifndef TIMER_ON
+    end = steady_clock::now();
+    nanoseconds elapsed_time = end - start;
+    PrintTime("Cleanup", elapsed_time);
+    #endif
 
     dbgprintf("Recover: Exiting function\n");
     return 0;
@@ -421,4 +455,11 @@ void Cleanup()
     }
     // Delete logMap
     logMap.clear();
+}
+
+void PrintTime(string metric, nanoseconds elapsed_time)
+{
+    cout << "[Metric:" << metric <<"]"
+        << "[Elapsed Time:" << (elapsed_time.count() / 1e6) << "ms]"
+        << endl;
 }

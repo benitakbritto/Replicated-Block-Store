@@ -160,11 +160,12 @@ target_link_libraries(client_lib
 # endforeach()
 
 foreach(_target
-  rw_perf )
+  rw_perf latency_perf)
   add_executable(${_target} "${_target}.cc")
   target_link_libraries(${_target}
     pthread
     hw_grpc_proto
+    client_lib
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF})

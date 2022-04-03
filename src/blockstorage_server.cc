@@ -28,6 +28,7 @@
 #include "util/crash_recovery.h"
 #include "util/locks.h"
 #include "util/state.h"
+#include "util/cache.h"
 #include "util/common.h"
 
 /******************************************************************************
@@ -68,6 +69,10 @@ KVStore kvObj;
 string SERVER_1;
 string SERVER_2;
 MutexMap mutexMap;
+
+//Cache utilities
+Cache cacheUtil;
+unordered_map<string, string> addrToContentCache;
 // stores the information about the txn
 // once txn is replicated across all replicas, it should be removed to avoid memory overflow
 volatile map<string, Txn> txn_map;
@@ -95,7 +100,7 @@ class Helper {
   int WriteToTempFile(const std::string temp_path, const std::string original_path, const char* buffer, unsigned int size, int offset){
     dbgprintf("[INFO] WriteToTempFile: Entering function\n");
     dbgprintf("[INFO] WriteToTempFile: temp_path = %s | original_path = %s\n", temp_path.c_str(), original_path.c_str());
-    dbgprintf("[INFO] WriteToTempFile: buffer %s\n", buffer);
+    // dbgprintf("[INFO] WriteToTempFile: buffer %s\n", buffer);
     dbgprintf("[INFO] WriteToTempFile: size = %d | offset = %d\n", size, offset);
 
     int fd_original = open(original_path.c_str(), O_RDONLY);
@@ -119,7 +124,7 @@ class Helper {
     memset(original_content, '\0', 4096);
     int read_rc = read(fd_original, original_content, 4096);
     dbgprintf("[INFO] WriteToTempFile: read_rc = %d\n", read_rc);
-    dbgprintf("[INFO] WriteToTempFile: original_content = %s\n", original_content);
+    // dbgprintf("[INFO] WriteToTempFile: original_content = %s\n", original_content);
     if (read_rc == -1)
     {
       dbgprintf("[ERR] WriteToTempFile: read local failed\n");
@@ -129,7 +134,7 @@ class Helper {
 
     // TODO: make only one write call
     int write_rc = write(fd_tmp, original_content, read_rc);
-    dbgprintf("[INFO] WriteToTempFile: write_rc = %d\n", write_rc);
+    // dbgprintf("[INFO] WriteToTempFile: write_rc = %d\n", write_rc);
     if (write_rc == -1)
     {
       dbgprintf("[ERR] WriteToTempFile: write local failed\n");
@@ -224,7 +229,7 @@ class ServiceCommImpl final: public ServiceComm::Service {
     dbgprintf("[INFO] Prepare: Entering function\n");
     string txnId = request->transationid();
     string buffer = request->buffer();
-    dbgprintf("[INFO] Prepare: txnId = %s | buffer = %s\n", txnId.c_str(), buffer.c_str());
+    // dbgprintf("[INFO] Prepare: txnId = %s | buffer = %s\n", txnId.c_str(), buffer.c_str());
 
     vector<pair<string, string>> rename_movs;
     vector<string> original_files;
@@ -448,9 +453,21 @@ public:
     dbgprintf("[INFO] Read: Entering function\n");
     int address = request->addr();
     dbgprintf("[INFO] Read: address = %d\n", address);
-    std::string readContent;
+    
+    string readContent;
+    string addressString = to_string(address);
 
-    std::vector<PathData> pathData = atl.GetAllFileNames(address);
+    if (CACHE_ON) {
+      readContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+    }
+    
+    if (!readContent.empty()){
+      dbgprintf("Read content from cache, returning\n")
+      reply->set_buffer(readContent);
+      return Status::OK;
+    }
+
+    vector<PathData> pathData = atl.GetAllFileNames(address);
 
     for(PathData pd : pathData) {
       dbgprintf("[INFO] Read: pd.path = %s\n", pd.path.c_str());
@@ -484,6 +501,12 @@ public:
       close(fd);
     }
 
+    if (CACHE_ON) {
+      cout << "[INFO]: Read: adding to cache " << endl;
+      cacheUtil.AddToCache(addrToContentCache, addressString, readContent);
+    }
+    
+    
     reply->set_buffer(readContent);
     return Status::OK;
   }
@@ -505,7 +528,20 @@ public:
     address = request->addr();
     dbgprintf("[INFO] Write: address = %d\n", address);
     buffer = request->buffer();
-    dbgprintf("[INFO] Write: buffer = %s\n", buffer.c_str());
+    // dbgprintf("[INFO] Write: buffer = %s\n", buffer.c_str());
+    
+    string addressString = to_string(address);
+    string prevContent;
+
+    if (CACHE_ON) {
+      
+      prevContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+
+      if (prevContent.empty()) {
+        dbgprintf("Write: prevContent empty on cache\n");
+        cacheUtil.AddToCache(addrToContentCache, addressString, "");
+      }
+    }
     
     // fetch files from ATL
     pathData = atl.GetAllFileNames(address);
@@ -589,6 +625,11 @@ public:
         
         dbgprintf("[INFO]: releasing the file write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
+        
+        if (CACHE_ON) {
+          cout << "[INFO]: Write: updating cache " << endl;
+          cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
+        }
 
         // 7.3 Respond success
         return Status::OK;
@@ -652,6 +693,11 @@ public:
     }
     dbgprintf("INFO]: WRITE: releasing the file write lock\n");
     mutexMap.ReleaseWriteLock(writeLockForFile);
+
+    if (CACHE_ON) {
+      cout << "[INFO]: Write: updating cache " << endl;
+      cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
+    }
 
     dbgprintf("Write: Exiting function\n");
     return Status::OK;
@@ -795,10 +841,10 @@ void *RunCommServer(void* _self_addr_peer) {
  * DECLARATION - RECOVERY part 2
  *****************************************************************************/
 class ServiceCommClient {
-private:
+  private:
       unique_ptr<ServiceComm::Stub> stub_;
       
-public:
+  public:
       ServiceCommClient(std::shared_ptr<Channel> channel)
         : stub_(ServiceComm::NewStub(channel)) {}
       
@@ -892,12 +938,12 @@ public:
  * DECLARATION - LOAD BALANCER COMMUNICATION
  *****************************************************************************/
 class LBNodeCommClient {
-private:
+  private:
     unique_ptr<LBNodeComm::Stub> stub_;
     Identity identity;
     string self_addr;
   
-public:
+  public:
     LBNodeCommClient(string target_str, Identity _identity, string _self_addr) {
       identity = _identity;
       stub_ = LBNodeComm::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
@@ -963,8 +1009,8 @@ void *StartHB(void* _identity) {
  * DRIVER
  *****************************************************************************/
 // ./blockstorage_server [identity] [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr] 
-// ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:70053 20.124.236.11:50056
-// e.g ./blockstorage_server PRIMARY 52.151.53.152:40051 0.0.0.0:60052 20.109.180.121:60053 52.151.53.152:50056
+// ./blockstorage_server PRIMARY 20.124.236.11:40051 0.0.0.0:60052 0.0.0.0:70053 20.124.236.11:50056 //hemal
+// e.g ./blockstorage_server PRIMARY 52.151.53.152:40051 0.0.0.0:60052 20.109.180.121:60053 52.151.53.152:50056 //reetu
 // e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 52.151.53.152:60052 52.151.53.152:50056
 // e.g ./blockstorage_server BACKUP 20.109.180.121:40052 0.0.0.0:60053 20.228.235.42:60052 20.228.235.42:50056
 int main(int argc, char** argv) {

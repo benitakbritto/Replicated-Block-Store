@@ -456,7 +456,10 @@ public:
     
     string readContent;
     string addressString = to_string(address);
-    readContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+
+    if (CACHE_ON) {
+      readContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+    }
     
     if (!readContent.empty()){
       dbgprintf("Read content from cache, returning\n")
@@ -498,8 +501,11 @@ public:
       close(fd);
     }
 
-    cout << "[INFO]: Read: adding to cache " << endl;
-    cacheUtil.AddToCache(addrToContentCache, addressString, readContent);
+    if (CACHE_ON) {
+      cout << "[INFO]: Read: adding to cache " << endl;
+      cacheUtil.AddToCache(addrToContentCache, addressString, readContent);
+    }
+    
     
     reply->set_buffer(readContent);
     return Status::OK;
@@ -525,12 +531,18 @@ public:
     // dbgprintf("[INFO] Write: buffer = %s\n", buffer.c_str());
     
     string addressString = to_string(address);
-    string prevContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+    string prevContent;
 
-    if (prevContent.empty()) {
-      dbgprintf("Write: prevContent empty on cache\n");
-      cacheUtil.AddToCache(addrToContentCache, addressString, "");
+    if (CACHE_ON) {
+      
+      prevContent = cacheUtil.GetValueFromCache(addrToContentCache, addressString);
+
+      if (prevContent.empty()) {
+        dbgprintf("Write: prevContent empty on cache\n");
+        cacheUtil.AddToCache(addrToContentCache, addressString, "");
+      }
     }
+    
     // fetch files from ATL
     pathData = atl.GetAllFileNames(address);
 
@@ -613,9 +625,12 @@ public:
         
         dbgprintf("[INFO]: releasing the file write lock\n");
         mutexMap.ReleaseWriteLock(writeLockForFile);
+        
+        if (CACHE_ON) {
+          cout << "[INFO]: Write: updating cache " << endl;
+          cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
+        }
 
-        cout << "[INFO]: Write: updating cache " << endl;
-        cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
         // 7.3 Respond success
         return Status::OK;
       }
@@ -679,8 +694,10 @@ public:
     dbgprintf("INFO]: WRITE: releasing the file write lock\n");
     mutexMap.ReleaseWriteLock(writeLockForFile);
 
-    cout << "[INFO]: Write: updating cache " << endl;
-    cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
+    if (CACHE_ON) {
+      cout << "[INFO]: Write: updating cache " << endl;
+      cacheUtil.UpdateCache(addrToContentCache, addressString, buffer);
+    }
 
     dbgprintf("Write: Exiting function\n");
     return Status::OK;
@@ -824,10 +841,10 @@ void *RunCommServer(void* _self_addr_peer) {
  * DECLARATION - RECOVERY part 2
  *****************************************************************************/
 class ServiceCommClient {
-private:
+  private:
       unique_ptr<ServiceComm::Stub> stub_;
       
-public:
+  public:
       ServiceCommClient(std::shared_ptr<Channel> channel)
         : stub_(ServiceComm::NewStub(channel)) {}
       
@@ -921,12 +938,12 @@ public:
  * DECLARATION - LOAD BALANCER COMMUNICATION
  *****************************************************************************/
 class LBNodeCommClient {
-private:
+  private:
     unique_ptr<LBNodeComm::Stub> stub_;
     Identity identity;
     string self_addr;
   
-public:
+  public:
     LBNodeCommClient(string target_str, Identity _identity, string _self_addr) {
       identity = _identity;
       stub_ = LBNodeComm::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));

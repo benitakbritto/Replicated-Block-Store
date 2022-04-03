@@ -61,12 +61,12 @@ void Cache::DeleteKey(unordered_map<string, string> &CACHE, string key)
 }
 
 // Tester
-int main()
-{
-    unordered_map<string, string> CACHE;
-    Cache c;
+// int main()
+// {
+//     unordered_map<string, string> CACHE;
+//     Cache c;
 
-    c.AddToCache(CACHE, "1", "a");
-    cout << "Key: 1, Value: " << c.GetValueFromCache(CACHE, "1") << endl;
-    return 0;
-}
+//     c.AddToCache(CACHE, "1", "a");
+//     cout << "Key: 1, Value: " << c.GetValueFromCache(CACHE, "1") << endl;
+//     return 0;
+// }

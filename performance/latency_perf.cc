@@ -34,7 +34,7 @@ BlockStorageClient *blockstorageClient;
  * MACROS
  *****************************************************************************/
 #define BLOCK_SIZE          4096
-#define LOAD_BALANCER_ADDR  "20.228.235.42:50051"
+#define LOAD_BALANCER_ADDR  "128.105.144.16:50051"
 
 /******************************************************************************
  * NAMESPACES
@@ -92,6 +92,7 @@ int main(int argc, char** argv)
                 break;
             case 't':
                 test = stoi(optarg);
+                break;
             default:
                 cout << "Invalid arg" << endl;
                 return -1;

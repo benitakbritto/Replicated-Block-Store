@@ -6,7 +6,7 @@
 #include <vector>
 #include <errno.h>
 #include <stdio.h>
-#include <threads.h>
+#include <thread>
 #include <semaphore.h>
 #include <unistd.h>
 #include <cstring>

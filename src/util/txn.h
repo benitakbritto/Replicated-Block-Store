@@ -6,7 +6,7 @@
 #include "common.h"
 #include <utility>
 #include <semaphore.h>
-#include <threads.h>
+#include <thread>
 
 /******************************************************************************
  * NAMESPACES

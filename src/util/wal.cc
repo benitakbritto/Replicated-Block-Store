@@ -5,7 +5,8 @@ WAL::WAL(string base_path) {
     fd = open(log_file_path.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0666);
 
     if (fd == -1) {
-        throw runtime_error("[ERROR]: Could not create log file");
+       	cout << errno << endl;
+	throw runtime_error("[ERROR]: Could not create log file");
     }
 
     dbgprintf("[INFO]: Init logging at: %s\n", log_file_path.c_str());

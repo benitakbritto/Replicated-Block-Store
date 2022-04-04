@@ -778,6 +778,7 @@ void PrepareStorage() {
       if (res == -1 && errno == EEXIST) {
         // dbprintf("[WARN] File: %s already exists\n", file.c_str());
       }
+      close(res);
     }
   }
 }

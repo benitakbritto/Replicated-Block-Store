@@ -1,0 +1,27 @@
+## **** Latency Start ****
+
+# Read Aligned -- Run on 1 server up AND 2 servers up
+1. ./latency_perf -a 0 -j 4096 -l 5 -i 100 -t 0 
+
+# Read Unaligned -- Run on 1 server up AND 2 servers up
+2. ./latency_perf -a 2048 -j 4096 -l 5 -i 100 -t 0 
+
+# Write Aligned -- Run on 1 server up AND 2 servers up
+3. ./latency_perf -a 0 -j 4096 -l 5 -i 100 -t 1
+
+# Write Unaligned -- Run on 1 server up AND 2 servers up
+4. ./latency_perf -a 2048 -j 4096 -l 5 -i 100 -t 1
+
+# Read Aligned -- Run on 2 Servers and Crash one when request is in flight
+5. ./latency_perf -a 0 -j 4096 -l 5 -i 1 -t 0 
+
+# Read Unaligned -- Run on 2 Servers and Crash one when request is in flight
+6. ./latency_perf -a 2048 -j 4096 -l 5 -i 1 -t 0 
+
+# Write Aligned -- Run on 2 Servers and Crash one when request is in flight
+7. ./latency_perf -a 0 -j 4096 -l 5 -i 1 -t 1
+
+# Write Unaligned -- Run on 2 Servers and Crash one when request is in flight
+8. ./latency_perf -a 2048 -j 4096 -l 5 -i 1 -t 1
+
+## **** Latency End ****

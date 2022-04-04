@@ -1,0 +1,21 @@
+akshay95@node-0:~/CS-739-P3/performance/cmake/build$ time ./rw_perf 2 64
+[Metrics_START:READ_NON_ALIGNED]
+num_requests,time(in ms)
+64,40.6431
+128,46.9121
+256,85.9213
+512,152.935
+1024,303.53
+2048,599.583
+4096,1168.18
+[Metrics_END:READ_NON_ALIGNED]
+[Metrics_START:READ_ALIGNED]
+num_requests,time(in ms)
+64,26.4174
+128,36.4117
+256,79.071
+512,157.915
+1024,309.248
+2048,591.375
+4096,1211.41
+[Metrics_END:READ_ALIGNED]

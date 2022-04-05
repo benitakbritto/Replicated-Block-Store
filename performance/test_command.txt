@@ -37,3 +37,18 @@
 8. ./latency_perf -a 2048 -j 4096 -l 5 -i 2 -t 1
 
 ## **** Latency End ****
+
+
+## **** Performance Start ****
+1. Write  - 1 and 2 Servers
+./rw_perf 1 16 > /users/akshay95/CS-739-P3/performance/results/perf/one_server/write.txt
+./rw_perf 1 16 > /users/akshay95/CS-739-P3/performance/results/perf/two_server/write.txt
+
+2. Read - 1 and 2 Servers
+./rw_perf 2 64 > /users/akshay95/CS-739-P3/performance/results/perf/one_server/read.txt
+./rw_perf 2 64 > /users/akshay95/CS-739-P3/performance/results/perf/two_server/read.txt
+
+## **** Performance End ****
+
+
+

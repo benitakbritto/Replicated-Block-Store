@@ -93,12 +93,6 @@ string lb_addr;
 class Helper {
   public:
 
-  void kill_me(string msg) {
-    cout << msg << endl;
-    kill(getpid(), SIGINT);
-    exit(-1);
-  }
-
   string GenerateTempPath(std::string path){
     return path + ".tmp";
   }
@@ -455,9 +449,6 @@ public:
 
   Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
-    // TODO: CRASH
-    helper.kill_me("Crashing Read");
-    crash();
     dbgprintf("[INFO] Read: Entering function\n");
     int address = request->addr();
     dbgprintf("[INFO] Read: address = %d\n", address);

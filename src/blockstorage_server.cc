@@ -449,7 +449,8 @@ public:
 
   Status Read(ServerContext* context, const ReadRequest* request,
                   ReadReply* reply) override {
-    
+    // TODO: CRASH
+    crash();
     dbgprintf("[INFO] Read: Entering function\n");
     int address = request->addr();
     dbgprintf("[INFO] Read: address = %d\n", address);

@@ -10,11 +10,11 @@ Status BlockStorageClient::Read(const ReadRequest request,
     Status status;
 
     do {
-        reply.clear();
+        reply->Clear();
         ClientContext context;
         status = stub_->Read(&context, request, reply);    
         attempt++;
-    } while(attempt < 3 && status.error_code() != grpc::StatusCode::OK)
+    } while(attempt < 3 && status.error_code() != grpc::StatusCode::OK);
     
     // dbgprintf("[INFO] Read: Exiting function\n");
     return status;
@@ -36,7 +36,7 @@ Status BlockStorageClient::Write(int address,string buf)
         ClientContext context;
         status = stub_->Write(&context, request, &reply);
         attempt++;
-    } while(attempt < 3 && status.error_code() != grpc::StatusCode::OK)
+    } while(attempt < 3 && status.error_code() != grpc::StatusCode::OK);
 
     return status;
 }

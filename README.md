@@ -3,12 +3,18 @@
 ## Replication Strategy
 1. We use Primary-Backup. We support only 2 server nodes.
 Source code: `src/blockstorage_server.cc`
+- `class BlockStorageServiceImpl`: responds to client requests of `Read(Addr)` and `Write(Addr)`
+- `class ServiceCommImpl`: communicates with the other server node to propogate writes
+- `class ServiceCommClient`: communicates witht the other server for recovery
+- `class LBNodeCommClient`: communicates with the Load Balancer to send heartbeats and identify failover
 
 2. Client library
 Souce code: `src/client.h` and `src/client/cc`
 
 3. Load Balancer
 Source code: `src/load_balancer.cc`
+- `class BlockStorageService`: forwards client request to a server
+- `class LBNodeCommService`: used to identify server unavailability
 
 ## Durability
 We use a two phase strategy of writing to a temp file and atomic rename from temp to orginal file. 
@@ -39,9 +45,45 @@ for example, instead of `make -j` use `make -j 4`
 1. chmod 755 build.sh
 2. ./build.sh
 
-### Clean
-execute `make clean` from `cmake/build` directory.
+### Run
 
+#### Client
+```
+cd src/cmake/build
+./blockstorage_client
+```
+
+OR
+
+```
+cd performance/
+./build
+cd cmake/build
+<ANY OF THE EXECUTABLES LISTED IN THIS DIRECTORY>
+```
+
+#### Load Balancer
+```
+./load_balancer
+```
+
+#### Primary Server
+```
+./blockstorage_server PRIMARY [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr]
+```
+Eg.
+```
+./blockstorage_server PRIMARY 20.127.48.216:40051 0.0.0.0:60052 20.127.55.97:60053 20.228.235.42:50056
+```
+
+#### Backup Server
+```
+./blockstorage_server BACKUP [self_addr_lb] [self_addr_peer] [peer_addr] [lb_addr]
+```
+Eg.
+```
+./blockstorage_server BACKUP 20.127.55.97:40051 0.0.0.0:60053 20.127.48.216:60052 20.228.235.42:50056
+```
 
 ## Deliverables
 1. [Demos](https://uwprod-my.sharepoint.com/personal/rmukherjee28_wisc_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Frmukherjee28%5Fwisc%5Fedu%2FDocuments%2FP3&ct=1649304954996&or=OWA%2DNT&cid=4634676a%2D47ff%2D53ca%2De53f%2D6d37b0e93c83&ga=1)

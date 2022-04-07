@@ -17,7 +17,7 @@ Source code: `src/load_balancer.cc`
 - `class LBNodeCommService`: used to identify server unavailability
 
 ## Durability
-We use a two phase strategy of writing to a temp file and atomic rename from temp to orginal file. 
+We use a two phase strategy of writing to a temp file and atomic rename from temp to orginal file  
 Source code: `src/blockstorage_server.cc`
 
 ## Crash Recovery Protocol
@@ -32,6 +32,24 @@ Source code: `src/util/crash_recovery.h` and `src/util/crash_recovery.cc`
 Servers exchange hearbeats with the load balancer   
 Source code: `src/blockstorage_server.cc` and `src/load_balancer.cc`
 
+## Utilities
+1. Address Translation
+Source code: `src/util/address_translation.h` and `src/util/address_translation.cc`
+
+2. Cache
+Source code: `src/util/cache.h` and `src/util/cache.cc`
+
+3. Key Value Store
+Source code: `src/util/kv_store.h` and `src/util/kv_store.cc`
+
+4. Reader-Writer Locks
+Source code: `src/util/locks.h` and `src/util/locks.cc`
+
+5. Handling in-flight and future writes during recovery 
+Source code: `src/util/txn.h` and `src/util/txn.cc`
+
+6. Write Ahead Logging
+Source code: `src/util/wal.h` and `src/util/wal.cc`
 
 ## Setup
 ### gRPC Installation

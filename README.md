@@ -25,11 +25,11 @@ We perform 4 steps to recover from a server crash viz.
 1. Parse log file
 2. Get pending writes
 3. Recover from other states
-4. Cleanup
+4. Cleanup   
 Source code: `src/util/crash_recovery.h` and `src/util/crash_recovery.cc`
 
 ## Failover
-Servers exchange hearbeats with the load balancer
+Servers exchange hearbeats with the load balancer   
 Source code: `src/blockstorage_server.cc` and `src/load_balancer.cc`
 
 
@@ -46,7 +46,6 @@ for example, instead of `make -j` use `make -j 4`
 2. ./build.sh
 
 ### Run
-
 #### Client
 ```
 cd src/cmake/build

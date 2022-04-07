@@ -32,6 +32,14 @@ Source code: `src/util/crash_recovery.h` and `src/util/crash_recovery.cc`
 Servers exchange hearbeats with the load balancer   
 Source code: `src/blockstorage_server.cc` and `src/load_balancer.cc`
 
+
+## Test code
+Present in `performance/` and MACROS present in `src/util/common.h`
+- `concurrent_rw.cc`: Client code that issues reads and writes concurrently
+- `latency_perf.cc`: Client code that issues the read and write multiple times on the same address
+- `recovery_perf.cc`: Client code that initialises the servers with writes to analyse recovery time
+- `rw_perf.cc`: Client code that issues reads and writes on multiple addresses concurrently
+
 ## Utilities
 1. Address Translation
 Source code: `src/util/address_translation.h` and `src/util/address_translation.cc`
@@ -59,7 +67,13 @@ Follow these steps to install gRPC lib using cmake: https://grpc.io/docs/languag
 for example, instead of `make -j` use `make -j 4`
 
 ### Build
+#### Main source code
 0. cd src/
+1. chmod 755 build.sh
+2. ./build.sh
+
+#### Performance scripts
+0. cd performance/
 1. chmod 755 build.sh
 2. ./build.sh
 
@@ -101,6 +115,40 @@ Eg.
 ```
 ./blockstorage_server BACKUP 20.127.55.97:40051 0.0.0.0:60053 20.127.48.216:60052 20.228.235.42:50056
 ```
+
+#### Performance Scripts
+- concurrent_rw
+```
+cd performance/cmake/build
+./concurrent_rw
+```
+- latency_perf
+```
+cd performance/cmake/build
+./latency_perf -a <num> -j <num> -l <num> -i <num> -t <num>
+```
+Where a stands for the start address
+j stands for the next address jump
+l stands for the count of addresses / limit
+i stands for the number of iterations
+t stands for the test, 0 for read and 1 for write
+- recovery_perf
+```
+./recovery_perf -a <num> -j <num> -l <num> -i <num>
+```
+Where a stands for the start address
+j stands for the next address jump
+l stands for the count of addresses / limit
+i stands for the number of iterations
+
+- rw_perf
+```
+./rw_perf <num> <num>
+```
+Where the first num corresponds to 0 for read and 1 for write. 
+The second num corresponds to the number of worker threads.
+
+
 
 ## Deliverables
 1. [Demos](https://uwprod-my.sharepoint.com/personal/rmukherjee28_wisc_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Frmukherjee28%5Fwisc%5Fedu%2FDocuments%2FP3&ct=1649304954996&or=OWA%2DNT&cid=4634676a%2D47ff%2D53ca%2De53f%2D6d37b0e93c83&ga=1)

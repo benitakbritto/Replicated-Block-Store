@@ -19,12 +19,7 @@ for example, instead of `make -j` use `make -j 4`
 execute `make clean` from `cmake/build` directory.
 
 
-### Performance Graphs
-1. 4k aligned reads(same addr) - time vs num ops - shows server scalability
-2. 4k aligned writes(same addr)- time vs num ops - shows server scalability
-3. Non 4k aligned reads(same addr) - time vs num ops - shows server scalability
-4. Non 4k aligned writes(same addr) - time vs num ops - shows server scalability
-
-- Combine 1,2,3,4 graphs.
-the above shows the *minimum-guaranteed* performance from our system. Because for read we are accessing the same memory/file. 
-
+# Deliverables
+1. [Demos](https://uwprod-my.sharepoint.com/personal/rmukherjee28_wisc_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Frmukherjee28%5Fwisc%5Fedu%2FDocuments%2FP3&ct=1649304954996&or=OWA%2DNT&cid=4634676a%2D47ff%2D53ca%2De53f%2D6d37b0e93c83&ga=1)
+2. [Report](https://docs.google.com/document/d/1bRZoiuBFnKtdHMuaLA-XYtsdmE0j9GiTS8y4GpB_kJ0/edit)
+3. [Presentation](https://uwprod-my.sharepoint.com/:p:/g/personal/rmukherjee28_wisc_edu/EeUXlw-LdeZGlavFvaAIW2cBMunLacGTDcP6zYge57fgqw?e=4%3AjKLeK7&at=9&wdLOR=cA98CA1D5-CAD0-DF49-A064-EC07D7B90F13&PreviousSessionID=b9354234-a437-b792-1eff-d34830abb2fe)

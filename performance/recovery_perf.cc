@@ -1,11 +1,10 @@
 /******************************************************************************
- * @usage: ./latency_perf -a <num> -j <num> -l <num> -i <num> -t <num>
+ * @usage: ./recovery_perf -a <num> -j <num> -l <num> -i <num> 
  * where 
  *  a is the start address
  *  j is the jump amount
  *  l is the limit (number of times jump will increment start address)
  *  i is the iteration amount
- *  t is the test (0: READ, 1: WRITE)
  * 
  * @prereq: Things to do before running this test
  *  1. CLEAN self.log on PRIMARY and BACKUP

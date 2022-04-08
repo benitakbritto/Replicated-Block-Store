@@ -1,4 +1,4 @@
-# CS-739-P3
+# CS-739-P3: Replicated Block Store
 
 ## Replication Strategy
 1. We use Primary-Backup. We support only 2 server nodes.
